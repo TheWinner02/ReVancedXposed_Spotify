@@ -1,14 +1,14 @@
 [versions]
-agp = "8.13.1"
-kotlin = "2.2.20"
+agp = "8.13.2"
+kotlin = "2.3.20"
 dexkit = "2.0.7"
 xposed = "82"
 annotation = "1.9.1"
 gson = "2.13.2"
 kotlinxCoroutinesAndroid = "1.10.2"
 fuel = "3.0.0-alpha04"
-junit = "6.0.1"
-jadx = "1.5.3"
+junit = "6.0.3"
+jadx = "1.5.5"
 slf4j = "2.0.17"
 
 [libraries]

@@ -9,6 +9,7 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
+import io.github.chsbuffer.revancedxposed.spotify.RoundyUIHook
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
@@ -39,6 +40,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             }
 
             hooksByPackage[lpparam.packageName]?.invoke()?.Hook()
+            RoundyUIHook(lpparam).hook()
         }
     }
 
