@@ -4,6 +4,7 @@
 </div>
 
 **ReVanced LSPosed module by ChsBuffer, just for Spotify.**  
+Forked and Updating by TheWinner02.
 >[!IMPORTANT]  
 > - This is **NOT an official ReVanced project**, do not ask the ReVanced developers for help.
 > - **Root access** is strictly **required** to use this module!
@@ -46,9 +47,12 @@ There is something you need to know in order to use it, so find it on the xManag
 ### Spotify
 - Unlock Spotify Premium
 - Sanitize sharing links
+- Monet theme by TheWinner02
+- RoundyUI by Thewinner02
+- Module menu by TheWinner02
 
 ## Downloads
-- **Release build**: [Download](https://github.com/chsbuffer/ReVancedXposed_Spotify/releases/latest)
+- **Release build**: [Download](https://github.com/TheWinner02/ReVancedXposed_Spotify/releases/latest)
 
 > [!NOTE]  
 > The package name and signature of this build are different every day. You don't have to reinstall it every day.

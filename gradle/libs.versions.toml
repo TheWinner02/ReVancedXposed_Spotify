@@ -10,6 +10,7 @@ fuel = "3.0.0-alpha04"
 junit = "6.0.3"
 jadx = "1.5.5"
 slf4j = "2.0.17"
+material = "1.13.0"
 
 [libraries]
 dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }
@@ -22,6 +23,7 @@ junit-jupiter-params = { group = "org.junit.jupiter", name = "junit-jupiter-para
 jadx-core = { group = "io.github.skylot", name = "jadx-core", version.ref = "jadx" }
 slf4j-simple = { group = "org.slf4j", name = "slf4j-simple", version.ref = "slf4j" }
 kotlinx-serialization-protobuf = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-protobuf", version = "1.9.0" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

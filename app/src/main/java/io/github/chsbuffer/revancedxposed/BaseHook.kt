@@ -181,7 +181,6 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
         if (!isCached) {
             cache.clearAll()
             cache.put("id", id)
-            Utils.showToastLong("ReVanced Xposed is initializing, please wait...")
         }
     }
 
