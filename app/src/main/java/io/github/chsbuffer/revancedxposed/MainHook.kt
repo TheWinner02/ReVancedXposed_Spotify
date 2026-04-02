@@ -5,7 +5,6 @@ import android.app.Application
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
-import android.widget.Toast
 import app.revanced.extension.shared.Utils
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.IXposedHookZygoteInit
@@ -14,6 +13,7 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
+import io.github.chsbuffer.revancedxposed.spotify.AdBlockHook
 import io.github.chsbuffer.revancedxposed.spotify.RoundyUIHook
 import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
@@ -82,7 +82,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             val prefs = app.getSharedPreferences("spotify_prefs", 0)
 
             if (isReVancedPatched(lpparam)) {
-                Utils.showToastLong("ReVanced Xposed module does not work with patched app")
+                Utils.showToastLong("ReVanced Xposed FE module does not work with patched app")
                 return@inContext
             }
             Utils.showToastLong("ReVanced Xposed FE is initializing, please wait...")
@@ -97,9 +97,20 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 XposedBridge.log("Mod Premium fallita: ${e.message}")
             }
 
+            // --- BLOCCO: AD BLOCK ---
+            try {
+                // Puoi aggiungere "enable_adblock" nel tuo SettingsSheet più tardi
+                if (prefs.getBoolean("enable_adblock", true)) {
+                    AdBlockHook(lpparam).hook()
+                    XposedBridge.log("AdBlocker: Modulo attivato")
+                }
+            } catch (e: Exception) {
+                XposedBridge.log("AdBlocker fallito: ${e.message}")
+            }
+
             // --- BLOCCO MONET ---
             try {
-                if (prefs.getBoolean("enable_monet", false)) {
+                if (prefs.getBoolean("enable_monet", true)) {
                     ThemeHook(app, lpparam).hook()
                 }
             } catch (e: Exception) {
@@ -108,7 +119,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
             // --- BLOCCO ROUNDY (Il sospettato numero 1) ---
             try {
-                if (prefs.getBoolean("enable_round_ui", false)) {
+                if (prefs.getBoolean("enable_round_ui", true)) {
                     RoundyUIHook(lpparam).hook()
                 }
             } catch (e: Exception) {

@@ -2,6 +2,7 @@ package io.github.chsbuffer.revancedxposed.spotify
 
 import android.content.res.Resources
 import android.graphics.Outline
+import android.util.Log
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewOutlineProvider
@@ -22,15 +23,32 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
 
     private val radiusLarge = dpToPx(28f)
     private val radiusFull = dpToPx(100f)
-
-    // Keywords estese per catturare tutto ciò che è una "piastrella" o "copertina"
-    private val targetKeywords = listOf(
-        "album_art", "image", "card", "entity_image", "content_image", "entity", "content", "category",
-        "browse", "search", "query", "background", "tile", "row_icon", "thumb"
-    )
+    private val TAG = "SpotifyRoundyUIDebug"
 
     fun hook() {
         val classLoader = lpparam.classLoader
+
+        /*
+        // 0. Hook UNIVERSALE con LOG di Debug
+        XposedHelpers.findAndHookMethod(
+            "android.view.View",
+            classLoader,
+            "onAttachedToWindow",
+            object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val view = param.thisObject as View
+
+                    // DEBUG: Estraiamo l'ID per capire cosa stiamo toccando
+                    val resName = try { view.resources.getResourceEntryName(view.id) } catch (_: Exception) { "null" }
+                    if (view is ImageView || resName != "null") {
+                        Log.d(TAG, "View rilevata: ID -> $resName | Classe -> ${view.javaClass.simpleName}")
+                    }
+
+                    applyRoundingIfTarget(view)
+                }
+            }
+        )
+        */
 
         // 1. Hook UNIVERSALE per lo stondamento basato su ID e Classe
         XposedHelpers.findAndHookMethod(
@@ -40,7 +58,7 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val view = param.thisObject as View
-                        applyRoundingIfTarget(view)
+                    applyRoundingIfTarget(view)
                 }
             }
         )
@@ -55,7 +73,7 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val imageView = param.thisObject as ImageView
-                        applyRoundingIfTarget(imageView)
+                    applyRoundingIfTarget(imageView)
                 }
             }
         )
@@ -112,7 +130,6 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
             Float::class.javaPrimitiveType,
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    val drawable = param.thisObject as android.graphics.drawable.Drawable
                     // Se il raggio è impostato via codice, lo forziamo al nostro radiusLarge
                     XposedHelpers.callMethod(param.thisObject, "setCornerSize", radiusLarge)
                 }
@@ -126,7 +143,8 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
 
         // 1. RICONOSCIMENTO IMMAGINI (Copertine Brani e Playlist)
         // Usiamo il controllo sulla classe ImageView per non mancare nulla
-        val isImage = view is android.widget.ImageView || className.contains("imageview")
+        val isAvatar = className.contains("faceview") || resName.contains("face")
+        val isImage = view is android.widget.ImageView || className.contains("imageview") && !isAvatar
 
         // 2. RICONOSCIMENTO HEADER E COVER (La copertina grande in alto)
         val isCoverOrHeader = resName.contains("header") ||
@@ -137,6 +155,8 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
         // 3. RICONOSCIMENTO SHEET E CARD
         val isSheet = className.contains("bottomsheet") || resName.contains("sheet") || resName.contains("queue")
         val isCard = className.contains("card") || resName.contains("tile")
+        val isSearchBar = resName == "browse_search_bar_container" || resName.contains("search")
+        val isCat = resName == "seek_frame" || resName.contains("seek")
 
         // 4. FILTRO RIGHE (Per evitare di tagliare il testo nella libreria/playlist)
         // Se è un contenitore (Layout) ma NON è un'immagine e NON è uno sheet
@@ -144,11 +164,13 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
 
         // LOGICA DI SELEZIONE
         val shouldRound = when {
+            isAvatar -> false         // Profilo
             isImage -> true           // Tutte le foto (piccole e grandi)
             isCoverOrHeader -> true   // Copertina principale Radio/Playlist
             isSheet -> true           // Menu e Coda
             isCard -> true            // Card Home/Search
-            resName.contains("search") || resName.contains("browse") -> true
+            isSearchBar -> true      // Barra di ricerca
+            isCat -> true            //
             else -> false
         }
 

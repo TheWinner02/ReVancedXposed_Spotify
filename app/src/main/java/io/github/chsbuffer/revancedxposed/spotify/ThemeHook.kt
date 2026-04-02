@@ -2,6 +2,7 @@ package io.github.chsbuffer.revancedxposed.spotify
 
 import android.app.Application
 import android.graphics.Color
+import android.view.View
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
@@ -123,7 +124,7 @@ class ThemeHook(private val app: Application, private val lpparam: XC_LoadPackag
             }
         )
         // 6. Hook alle Risorse (getColor)
-// Intercetta ogni volta che Spotify chiede un colore tramite ID (es. R.color.spotify_green)
+        // Intercetta ogni volta che Spotify chiede un colore tramite ID (es. R.color.spotify_green)
         XposedHelpers.findAndHookMethod(
             "android.content.res.Resources",
             lpparam.classLoader,
@@ -137,9 +138,9 @@ class ThemeHook(private val app: Application, private val lpparam: XC_LoadPackag
                 }
             }
         )
-
-// 7. Hook alle Risorse (getColorStateList)
-// Fondamentale per switch e icone nelle impostazioni
+        /*
+        // 7. Hook alle Risorse (getColorStateList)
+        // Fondamentale per switch e icone nelle impostazioni
         XposedHelpers.findAndHookMethod(
             "android.content.res.Resources",
             lpparam.classLoader,
@@ -156,9 +157,9 @@ class ThemeHook(private val app: Application, private val lpparam: XC_LoadPackag
                 }
             }
         )
-
-// 8. Hook ai TypedArray (Il "colpo finale" per gli XML)
-// Quando Android legge un attributo da un tema XML (es. ?attr/colorPrimary)
+        */
+        // 8. Hook ai TypedArray (Il "colpo finale" per gli XML)
+        // Quando Android legge un attributo da un tema XML (es. ?attr/colorPrimary)
         XposedHelpers.findAndHookMethod(
             "android.content.res.TypedArray",
             lpparam.classLoader,
@@ -169,6 +170,44 @@ class ThemeHook(private val app: Application, private val lpparam: XC_LoadPackag
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val color = param.result as Int
                     param.result = replaceColorLogic(color)
+                }
+            }
+        )
+
+        // 9.  RIMOZIONE SFUMATURE/OMBRE
+        XposedHelpers.findAndHookMethod(
+            "android.view.View",
+            classLoader,
+            "onAttachedToWindow",
+            object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val view = param.thisObject as View
+
+                    // Otteniamo il nome dell'ID (es. "shadow", "fade_overlay")
+                    val resName = try {
+                        view.resources.getResourceEntryName(view.id).lowercase()
+                    } catch (_: Exception) { "" }
+
+                    // Identifichiamo le ombre incriminate
+                    // Spotify spesso usa "shadow", "edge_fade" o nomi simili per quegli overlay
+                    val isShadowOrFade = resName.contains("shadow") ||
+                            resName.contains("fade") ||
+                            resName.contains("gradient")
+
+                    if (isShadowOrFade && view.javaClass.name == "android.view.View") {
+                        // Nascondiamo la view impostandola a GONE
+                        view.visibility = View.GONE
+
+                        // Opzionale: impostiamo le dimensioni a 0 per sicurezza
+                        view.layoutParams.width = 0
+                        view.layoutParams.height = 0
+                    }
+
+                    // Bonus: Rimuoviamo il fading edge dalle liste (RecyclerView)
+                    if (view.javaClass.name.contains("RecyclerView")) {
+                        view.isHorizontalFadingEdgeEnabled = false
+                        view.isVerticalFadingEdgeEnabled = false
+                    }
                 }
             }
         )
@@ -184,22 +223,26 @@ class ThemeHook(private val app: Application, private val lpparam: XC_LoadPackag
         val b = Color.blue(color)
 
         val newColor = when {
-            // VERDE SPOTIFY -> ACCENT
-            (g > 100 && g > r && g > b) -> accent
+            // 1. VERDE SPOTIFY -> ACCENT
+            (g > 100 && g > r * 1.1 && g > b * 1.1) -> accent
 
-            // ICONE E TESTI LUMINOSI -> ACCENT
+            // 2. TESTI E ICONE LUMINOSE -> ACCENT
+            // (Puoi commentare questo se preferisci che i testi bianchi restino bianchi invece di colorarsi)
             (r > 150 && Math.abs(r - g) < 20 && Math.abs(r - b) < 20) -> accent
 
-            // SFONDI NERI -> PRIMARY BG
-            (r < 45 && g < 45 && b < 45) -> primaryBg
+            // 3. SFONDO BASE (Nero profondo) -> PRIMARY BG
+            // Spotify usa valori RGB molto bassi (es. 18,18,18) per lo sfondo dietro a tutto.
+            (r <= 25 && g <= 25 && b <= 25) -> primaryBg
 
-            // GRIGI MEDI (Testi secondari, icone inattive) -> Spesso meglio lasciarli originali o un accent molto scuro
-            (r in 46..120 && g in 46..120 && b in 46..120) -> secondaryBg
+            // 4. SUPERFICI ELEVATE E PULSANTI INATTIVI -> SECONDARY BG
+            // Qui vivono i riempimenti delle chips! (es. 36,36,36 o 42,42,42)
+            (r in 26..70 && g in 26..70 && b in 26..70) -> secondaryBg
 
+            // 5. GRIGI MEDI E CHIARI -> Lasciamo l'originale
+            // Evita di colorare tutto, altrimenti testi secondari e separatori perdono senso.
             else -> color
         }
 
-        // Ricostruiamo preservando l'alpha (tranne per lo stato pressed che gestiamo sopra)
         val finalColor = Color.argb(a, Color.red(newColor), Color.green(newColor), Color.blue(newColor))
         colorCache[color] = finalColor
         return finalColor

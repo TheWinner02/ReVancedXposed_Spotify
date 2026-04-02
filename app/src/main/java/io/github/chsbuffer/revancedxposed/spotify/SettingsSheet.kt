@@ -61,9 +61,10 @@ object SettingsSheet {
         })
 
         // --- OPZIONI ---
+        root.addView(createRow(activity, "Enable Premium", "Listen in any order, shuffle, or Smart Shuffle", "enable_premium", prefs))
+        root.addView(createRow(activity, "Enable AdBlock", "Block ads and other unwanted content", "enable_adblock", prefs))
         root.addView(createRow(activity, "Enable Momnet Theme", "Dynamic colors based on the wallpaper", "enable_monet", prefs))
         root.addView(createRow(activity, "Enable RoundyUI", "Rounded corners on cards and images", "enable_round_ui", prefs))
-        root.addView(createRow(activity, "Enable Premium", "Play song in any order, Download songs", "enable_premium", prefs))
 
         // --- SPAZIO ---
         root.addView(View(activity).apply { layoutParams = LinearLayout.LayoutParams(-1, (20 * density).toInt()) })
@@ -102,7 +103,7 @@ object SettingsSheet {
                         .scaleX(0f)
                         .scaleY(0f)
                         .alpha(0f)
-                        .setDuration(500)
+                        .setDuration(1000)
                         .withEndAction { dialog.dismiss() }
                         .start()
                 }
@@ -129,7 +130,7 @@ object SettingsSheet {
                     // --- REGOLAZIONE FINE ---
                     // Aumenta questi valori se l'animazione è ancora troppo a sinistra o in alto
                     val offsetX = 180 * density // Sposta il punto di nascita a DESTRA
-                    val offsetY = 150 * density // Sposta il punto di nascita in BASSO
+                    val offsetY = 180 * density // Sposta il punto di nascita in BASSO
 
                     // Calcoliamo il centro visivo e applichiamo gli spostamenti
                     val visualCenterX = rect.left + (rect.width() / 2f) + offsetX
@@ -146,7 +147,7 @@ object SettingsSheet {
                 // Avvio animazione
                 root.animate()
                     .scaleX(1f).scaleY(1f).alpha(1f)
-                    .setDuration(500)
+                    .setDuration(1000)
                     .setInterpolator(OvershootInterpolator(1.1f))
                     .start()
 

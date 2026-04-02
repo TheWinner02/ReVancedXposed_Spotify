@@ -33,6 +33,6 @@ android {
     minSdk = 27
 }
 
-rootProject.name = "Revanced Xposed"
+rootProject.name = "Revanced Xposed FE"
 include(":app")
 include(":stub")

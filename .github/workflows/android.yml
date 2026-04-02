@@ -8,7 +8,6 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -46,8 +45,8 @@ jobs:
         GIT_DESCRIBE=$(git rev-parse --short HEAD)
         GIT_COMMIT_DATE=$(git log -1 --format=%cd --date=format:%y%m%d)
         cd app/build/outputs/apk/universal/release/
-        mv app-universal-release.apk ReVancedXposedSpotify-${GIT_COMMIT_DATE}.apk
+        mv app-universal-release.apk ReVancedXposedFESpotify-${GIT_COMMIT_DATE}.apk
         gh release delete autobuild --yes || true
-        gh release create autobuild ReVancedXposedSpotify-${GIT_COMMIT_DATE}.apk --latest --title "Build ${GIT_COMMIT_DATE}" --notes "Commit ${GIT_DESCRIBE}. The package name and signature of this build are different every day. You don't have to reinstall it every day."
+        gh release create autobuild ReVancedXposedFESpotify-${GIT_COMMIT_DATE}.apk --latest --title "Build ${GIT_COMMIT_DATE}" --notes "Commit ${GIT_DESCRIBE}. The package name and signature of this build are different every day. You don't have to reinstall it every day."
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
