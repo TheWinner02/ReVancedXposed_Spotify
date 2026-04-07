@@ -52,7 +52,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                     val decorView = activity.window.decorView as ViewGroup
                     decorView.viewTreeObserver.addOnGlobalLayoutListener {
                         // Proviamo a trovare l'avatar tramite ID comuni
-                        val avatarIds = listOf("profile_button", "profile_image", "avatar", "user_avatar")
+                        val avatarIds = listOf("profile_button", "profile_image", "entity_media_artwork", "self_view", "avatar", "user_avatar", "faceview")
                         var found = false
 
                         for (idName in avatarIds) {
