@@ -27,6 +27,7 @@ import java.io.File
 import java.lang.reflect.Constructor
 import java.lang.reflect.Member
 import java.lang.reflect.Method
+import kotlin.reflect.KFunction
 import kotlin.reflect.KFunction0
 import kotlin.reflect.KProperty0
 import kotlin.system.measureTimeMillis
@@ -137,7 +138,7 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
     override val classLoader = lpparam.classLoader!!
 
     // hooks
-    abstract val hooks: Array<HookFunction>
+    abstract val hooks: Array<KFunction<Any>>
     private val appliedHooks = mutableSetOf<HookFunction>()
     private val failedHooks = mutableListOf<HookFunction>()
 
