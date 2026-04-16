@@ -14,7 +14,6 @@ import io.github.chsbuffer.revancedxposed.spotify.misc.widgets.FixThirdPartyLaun
 @Suppress("UNCHECKED_CAST")
 class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, lpparam) {
     override val hooks = arrayOf(
-        ::FixFacebookLogin,
         ::Extension,
         ::SanitizeSharingLinks,
         ::UnlockPremium,
@@ -67,58 +66,6 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
 
         }.onFailure {
             XposedBridge.log("G error -> ${it.message}")
-        }
-    }
-
-    // ══════════════════════════════════════════════════════
-    // FACEBOOK LOGIN PATCH (Internal Method)
-    // ══════════════════════════════════════════════════════
-    fun FixFacebookLogin() {
-        val TAG = "FixFacebookLogin"
-
-        runCatching {
-            val cl = classLoader
-
-            // 1. Cerchiamo la classe che valida il login
-            val loginClientClass = runCatching {
-                cl.loadClass("com.facebook.login.LoginClient")
-            }.getOrNull()
-
-            if (loginClientClass != null) {
-                // Cerchiamo il metodo che valida la firma o i pacchetti
-                // Spesso si chiama 'validateSignature' o simili
-                loginClientClass.declaredMethods.forEach { method ->
-                    if (method.name.contains("validate", ignoreCase = true)) {
-                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
-                            override fun beforeHookedMethod(param: MethodHookParam) {
-                                // Forza la validazione a 'true' (successo)
-                                if (method.returnType == Boolean::class.javaPrimitiveType) {
-                                    param.result = true
-                                    XposedBridge.log("$TAG -> Validazione firma forzata a TRUE")
-                                }
-                            }
-                        })
-                    }
-                }
-            }
-
-            // 2. Manteniamo comunque il trucco del KatanaProxy per sicurezza
-            val katanaClass = runCatching {
-                cl.loadClass("com.facebook.login.KatanaProxyLoginMethodHandler")
-            }.getOrNull()
-
-            katanaClass?.declaredMethods?.forEach { m ->
-                if (m.returnType == Int::class.javaPrimitiveType && m.parameterTypes.isNotEmpty()) {
-                    XposedBridge.hookMethod(m, object : XC_MethodHook() {
-                        override fun beforeHookedMethod(p: MethodHookParam) {
-                            p.result = 0
-                            XposedBridge.log("$TAG -> Katana bypassato")
-                        }
-                    })
-                }
-            }
-        }.onFailure {
-            XposedBridge.log("$TAG Error -> ${it.message}")
         }
     }
 }

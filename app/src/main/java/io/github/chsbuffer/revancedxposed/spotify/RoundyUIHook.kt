@@ -28,7 +28,7 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
     fun hook() {
         val classLoader = lpparam.classLoader
 
-        /*
+
         // 0. Hook UNIVERSALE con LOG di Debug
         XposedHelpers.findAndHookMethod(
             "android.view.View",
@@ -48,7 +48,6 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
                 }
             }
         )
-        */
 
         // 1. Hook UNIVERSALE per lo stondamento basato su ID e Classe
         XposedHelpers.findAndHookMethod(

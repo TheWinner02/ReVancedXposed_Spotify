@@ -201,6 +201,7 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
         val success = failedHooks.isEmpty()
         if (!success) {
             XposedBridge.log("${lpparam.appInfo.packageName} version: ${getAppVersion()}")
+            if (!getAppVersion().contains("1486"))
             Utils.showToastLong("Error while apply following Hooks:\n${failedHooks.joinToString { it.name }}")
         }
     }
