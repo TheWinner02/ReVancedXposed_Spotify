@@ -67,13 +67,16 @@ val isPremiumUpsellField = findFieldDirect {
     viewModelClazz().fields.filter { it.typeName == "boolean" }[1]
 }
 
+// Nel file dei Fingerprint
 @SkipTest
 fun structureGetSectionsFingerprint(className: String) = fingerprint {
-    classMatcher { className(className, StringMatchType.EndsWith) }
+    // Usiamo Contains invece di EndsWith per maggiore flessibilità
+    classMatcher { className(className, StringMatchType.Contains) }
     methodMatcher {
+        // Cerchiamo un metodo che legge un campo che finisce per "sections_"
         addUsingField {
             usingType = UsingType.Read
-            name = "sections_"
+            name("sections_", StringMatchType.EndsWith)
         }
     }
 }
