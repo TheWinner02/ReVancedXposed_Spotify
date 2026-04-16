@@ -85,19 +85,19 @@ fun SpotifyHook.LogOutPatch() {
                             val peeked = resp.javaClass.getMethod("peekBody", Long::class.javaPrimitiveType).invoke(resp, 65536L)
                             val bodyString = peeked.javaClass.getMethod("string").invoke(peeked) as String
 
-                            Logger.printDebug { "DEBUG LOGIN RESP ($host): ${bodyString.take(300)}..." }
+                            Log.d(TAG, "DEBUG LOGIN RESP ($host): ${bodyString.take(300)}...")
 
                             if (bodyString.contains("access_token")) {
                                 AuthCache.body = bodyString
                                 AuthCache.contentType = findMethodSafe(peeked.javaClass, "contentType")?.invoke(peeked)
-                                Logger.printDebug { "★ L1: Auth Token CACHED" }
+                                Log.d(TAG, "★ L1: Auth Token CACHED")
                             }
 
                             if (bodyString.contains("country") || bodyString.contains("license")) {
-                                Logger.printDebug { "DEBUG: Trovati dati sensibili (country/license) in risposta" }
+                                Log.i(TAG, "DEBUG: Trovati dati sensibili (country/license) in risposta")
                             }
                         } catch (e: Exception) {
-                            Logger.printDebug { "DEBUG: Errore stream: ${e.message}" }
+                            Log.e(TAG, "DEBUG: Errore durante lettura stream: ${e.message}")
                         }
                     } else if ((code == 401 || code == 403) && AuthCache.body != null && isAuthEndpoint) {
                         Log.w(TAG, "★ L1: Auth REJECTED ($code) -> REPLAYING cached success response")

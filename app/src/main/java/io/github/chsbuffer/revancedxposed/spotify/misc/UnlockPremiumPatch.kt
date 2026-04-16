@@ -1,5 +1,6 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc
 
+import android.util.Log
 import app.revanced.extension.shared.Logger
 import app.revanced.extension.spotify.misc.UnlockPremiumPatch
 import de.robv.android.xposed.XC_MethodHook
@@ -19,20 +20,17 @@ fun SpotifyHook.UnlockPremium() {
             after { param ->
                 val result = param.result as? Map<String, *> ?: return@after
 
-                Logger.printDebug { "DEBUG: 'type' PRIMA: ${result["type"]} | 'product' PRIMA: ${result["product"]}" }
+                // LOG PRE-PATCH
+                Log.d("UnlockPremium", "DEBUG: 'type' PRIMA del patch: ${result["type"]}")
+                Log.d("UnlockPremium", "DEBUG: 'product' PRIMA del patch: ${result["product"]}")
 
                 UnlockPremiumPatch.overrideAttributes(result)
 
-                Logger.printDebug { "DEBUG: 'type' DOPO: ${result["type"]}" }
-
-                if (result["type"] == "premium") {
-                    Logger.printDebug { "★ Patch applicato correttamente in memoria" }
-                } else {
-                    Logger.printDebug { "⚠ Patch FALLITO: 'type' è ancora ${result["type"]}" }
-                }
+                // LOG POST-PATCH
+                Log.d("UnlockPremium", "DEBUG: 'type' DOPO il patch: ${result["type"]}")
             }
         }
-    }.onFailure { Logger.printDebug { "ERRORE: Fingerprint ProductState non trovato!" } }
+    }.onFailure { Log.e("UnlockPremium", "ERRORE: Fingerprint ProductState non trovato!") }
 
     // --- 2. POPULAR TRACKS ---
     runCatching {
