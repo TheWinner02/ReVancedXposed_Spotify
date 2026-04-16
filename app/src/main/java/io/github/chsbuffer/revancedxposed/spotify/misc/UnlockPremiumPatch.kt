@@ -18,10 +18,21 @@ fun SpotifyHook.UnlockPremium() {
         ::productStateProtoFingerprint.hookMethod {
             after { param ->
                 val result = param.result as? Map<String, *> ?: return@after
+
+                Logger.printDebug { "DEBUG: 'type' PRIMA: ${result["type"]} | 'product' PRIMA: ${result["product"]}" }
+
                 UnlockPremiumPatch.overrideAttributes(result)
+
+                Logger.printDebug { "DEBUG: 'type' DOPO: ${result["type"]}" }
+
+                if (result["type"] == "premium") {
+                    Logger.printDebug { "★ Patch applicato correttamente in memoria" }
+                } else {
+                    Logger.printDebug { "⚠ Patch FALLITO: 'type' è ancora ${result["type"]}" }
+                }
             }
         }
-    }.onFailure { Logger.printDebug { "Unlock: Attributi non trovati" } }
+    }.onFailure { Logger.printDebug { "ERRORE: Fingerprint ProductState non trovato!" } }
 
     // --- 2. POPULAR TRACKS ---
     runCatching {

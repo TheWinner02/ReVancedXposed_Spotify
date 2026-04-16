@@ -1,6 +1,7 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.logout
 
 import android.util.Log
+import app.revanced.extension.shared.Logger
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -79,19 +80,24 @@ fun SpotifyHook.LogOutPatch() {
                     // Target: login/auth/token refresh endpoints
                     val isAuthEndpoint = host.contains("login5") || host.contains("googleusercontent") || host.contains("spotify.com")
 
-                    // LAYER 1: Caching success (200) e Replay su fallimento (401/403)
-                    if (code in 200..299 && isAuthEndpoint) {
-                        val bodyObj = findMethodSafe(resp.javaClass, "body")?.invoke(resp) ?: return
-                        val peeked = runCatching {
-                            Long::class.javaPrimitiveType?.let { findMethodSafe(resp.javaClass, "peekBody", it) }
-                                ?.invoke(resp, 65536L)
-                        }.getOrNull() ?: bodyObj
+                    if (isAuthEndpoint && code == 200) {
+                        try {
+                            val peeked = resp.javaClass.getMethod("peekBody", Long::class.javaPrimitiveType).invoke(resp, 65536L)
+                            val bodyString = peeked.javaClass.getMethod("string").invoke(peeked) as String
 
-                        val text = findMethodSafe(peeked.javaClass, "string")?.invoke(peeked) as? String
-                        if (text?.contains("access_token") == true) {
-                            AuthCache.body = text
-                            AuthCache.contentType = findMethodSafe(peeked.javaClass, "contentType")?.invoke(peeked)
-                            Log.d(TAG, "★ L1: Auth Token CACHED")
+                            Logger.printDebug { "DEBUG LOGIN RESP ($host): ${bodyString.take(300)}..." }
+
+                            if (bodyString.contains("access_token")) {
+                                AuthCache.body = bodyString
+                                AuthCache.contentType = findMethodSafe(peeked.javaClass, "contentType")?.invoke(peeked)
+                                Logger.printDebug { "★ L1: Auth Token CACHED" }
+                            }
+
+                            if (bodyString.contains("country") || bodyString.contains("license")) {
+                                Logger.printDebug { "DEBUG: Trovati dati sensibili (country/license) in risposta" }
+                            }
+                        } catch (e: Exception) {
+                            Logger.printDebug { "DEBUG: Errore stream: ${e.message}" }
                         }
                     } else if ((code == 401 || code == 403) && AuthCache.body != null && isAuthEndpoint) {
                         Log.w(TAG, "★ L1: Auth REJECTED ($code) -> REPLAYING cached success response")
