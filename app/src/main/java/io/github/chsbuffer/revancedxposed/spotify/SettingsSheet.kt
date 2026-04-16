@@ -188,7 +188,7 @@ object SettingsSheet {
         })
         row.addView(textContainer)
         val toggle = Switch(context).apply {
-            isChecked = prefs.getBoolean(key, false)
+            isChecked = prefs.getBoolean(key, true)
             val spotifyGreen = Color.parseColor("#1DB954")
             thumbDrawable?.setTint(if (isChecked) spotifyGreen else Color.GRAY)
             scaleX = 1.50f
