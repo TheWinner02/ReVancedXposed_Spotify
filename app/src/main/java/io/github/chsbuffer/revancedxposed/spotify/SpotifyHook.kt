@@ -7,7 +7,6 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
 import io.github.chsbuffer.revancedxposed.BaseHook
 import io.github.chsbuffer.revancedxposed.injectHostClassLoaderToSelf
 import io.github.chsbuffer.revancedxposed.spotify.misc.UnlockPremium
-import io.github.chsbuffer.revancedxposed.spotify.misc.login.FixFacebookLoginPatch
 import io.github.chsbuffer.revancedxposed.spotify.misc.logout.LogOutPatch
 import io.github.chsbuffer.revancedxposed.spotify.misc.privacy.SanitizeSharingLinks
 import io.github.chsbuffer.revancedxposed.spotify.misc.widgets.FixThirdPartyLaunchersWidgets
@@ -15,7 +14,7 @@ import io.github.chsbuffer.revancedxposed.spotify.misc.widgets.FixThirdPartyLaun
 @Suppress("UNCHECKED_CAST")
 class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, lpparam) {
     override val hooks = arrayOf(
-        ::FixFacebookLoginPatch,
+        ::FixFacebookLogin,
         ::Extension,
         ::SanitizeSharingLinks,
         ::UnlockPremium,
@@ -68,6 +67,42 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
 
         }.onFailure {
             XposedBridge.log("G error -> ${it.message}")
+        }
+    }
+
+    // ══════════════════════════════════════════════════════
+    // FACEBOOK LOGIN PATCH (Internal Method)
+    // ══════════════════════════════════════════════════════
+    fun FixFacebookLogin() {
+        val TAG = "FixFacebookLogin"
+        runCatching {
+            // Cerchiamo la classe usando il classLoader dell'app
+            val clazz = runCatching {
+                classLoader.loadClass("com.facebook.login.KatanaProxyLoginMethodHandler")
+            }.getOrNull()
+
+            if (clazz == null) {
+                XposedBridge.log("$TAG -> Classe Facebook non trovata (normale se non usi FB)")
+                return
+            }
+
+            // Cerchiamo il metodo tryAuthorize (che restituisce Int e ha parametri)
+            val method = clazz.declaredMethods.firstOrNull { m ->
+                m.returnType == Int::class.javaPrimitiveType && m.parameterTypes.isNotEmpty()
+            }
+
+            if (method != null) {
+                XposedBridge.log("$TAG -> Hooking ${clazz.name}.${method.name}")
+                XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                    @Throws(Throwable::class)
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        // Forza il fallback sul browser (returnEarly 0)
+                        param.result = 0
+                    }
+                })
+            }
+        }.onFailure {
+            XposedBridge.log("$TAG -> Errore critico: ${it.message}")
         }
     }
 }
