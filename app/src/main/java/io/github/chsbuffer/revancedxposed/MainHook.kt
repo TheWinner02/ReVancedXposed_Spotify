@@ -90,7 +90,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             // --- BLOCCO PREMIUM ---
             // Ora è isolato: se Roundy sopra crasha, questo verrà comunque eseguito!
             try {
-                if (prefs.getBoolean("enable_premium", false)) {
+                if (prefs.getBoolean("enable_premium", true)) {
                     hooksByPackage[lpparam.packageName]?.invoke()?.Hook()
                 }
             } catch (e: Exception) {
@@ -100,7 +100,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             // --- BLOCCO: AD BLOCK ---
             try {
                 // Puoi aggiungere "enable_adblock" nel tuo SettingsSheet più tardi
-                if (prefs.getBoolean("enable_adblock", false)) {
+                if (prefs.getBoolean("enable_adblock", true)) {
                     AdBlockHook(lpparam).hook()
                     XposedBridge.log("AdBlocker: Modulo attivato")
                 }
@@ -110,7 +110,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
             // --- BLOCCO MONET ---
             try {
-                if (prefs.getBoolean("enable_monet", false)) {
+                if (prefs.getBoolean("enable_monet", true)) {
                     ThemeHook(app, lpparam).hook()
                 }
             } catch (e: Exception) {
@@ -119,7 +119,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
             // --- BLOCCO ROUNDY (Il sospettato numero 1) ---
             try {
-                if (prefs.getBoolean("enable_round_ui", false)) {
+                if (prefs.getBoolean("enable_round_ui", true)) {
                     RoundyUIHook(lpparam).hook()
                 }
             } catch (e: Exception) {
