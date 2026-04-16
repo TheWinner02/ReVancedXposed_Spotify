@@ -1,6 +1,5 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc
 
-import android.util.Log
 import app.revanced.extension.shared.Logger
 import app.revanced.extension.spotify.misc.UnlockPremiumPatch
 import de.robv.android.xposed.XC_MethodHook
@@ -18,131 +17,130 @@ import java.lang.reflect.Field
 @Suppress("UNCHECKED_CAST")
 fun SpotifyHook.UnlockPremium() {
 
-    // --- 1. SBLOCCO ATTRIBUTI (CORE PREMIUM) ---
-    // Usiamo 'after' per intercettare il risultato.
-    // Fondamentale: creiamo una copia, non modifichiamo l'oggetto originale.
+    // --- 1. SBLOCCO ATTRIBUTI (CORE PREMIUM & FIX 14 GIORNI) ---
     runCatching {
         ::productStateProtoFingerprint.hookMethod {
             after { param ->
-                val result = param.result as? Map<String, *> ?: return@after
+                val result = param.result as? Map<String, Any> ?: return@after
 
-                // LOG PRE-PATCH
-                Log.d("UnlockPremium", "DEBUG: 'type' PRIMA del patch: ${result["type"]}")
-                Log.d("UnlockPremium", "DEBUG: 'product' PRIMA del patch: ${result["product"]}")
-
+                // Proviamo il patch standard
                 UnlockPremiumPatch.overrideAttributes(result)
 
-                // LOG POST-PATCH
-                Log.d("UnlockPremium", "DEBUG: 'type' DOPO il patch: ${result["type"]}")
+                // FORZATURA MANUALE (Anti-14 giorni / Anti-Free)
+                // Se la mappa è mutabile (quasi sempre in questa fase), forziamo i valori chiave
+                (result as? MutableMap<String, Any>)?.apply {
+                    put("type", "premium")
+                    put("product", "premium")
+                    put("can_download", "true")
+                    put("ads", "0")
+                    put("streaming-rules", "") // Rimuove restrizioni geografiche
+                }
+
+                Logger.printDebug { "UnlockPremium: Attributi patchati (Stato: ${result["type"]})" }
             }
         }
-    }.onFailure { Log.e("UnlockPremium", "ERRORE: Fingerprint ProductState non trovato!") }
+    }.onFailure { Logger.printDebug { "ERRORE CRITICO: Fingerprint ProductState non trovato!" } }
 
     // --- 2. POPULAR TRACKS (PAGINA ARTISTA) ---
-    ::buildQueryParametersFingerprint.hookMethod {
-        after { param ->
-            val result = param.result ?: return@after
-            val fieldName = "checkDeviceCapability"
-            if (result.toString().contains("$fieldName=")) {
-                param.result = XposedBridge.invokeOriginalMethod(
-                    param.method, param.thisObject, arrayOf(param.args[0], true)
-                )
+    runCatching {
+        ::buildQueryParametersFingerprint.hookMethod {
+            after { param ->
+                val result = param.result ?: return@after
+                if (result.toString().contains("checkDeviceCapability=")) {
+                    param.result = XposedBridge.invokeOriginalMethod(
+                        param.method, param.thisObject, arrayOf(param.args[0], true)
+                    )
+                }
             }
         }
     }
 
-    // --- 3. GOOGLE ASSISTANT (FIX URIs) ---
-    ::contextFromJsonFingerprint.hookMethod {
-        fun safeRemoveStation(field: Field?, obj: Any?) {
-            if (field == null || obj == null) return
-            runCatching {
-                val value = field.get(obj) as? String ?: return
-                field.set(obj, UnlockPremiumPatch.removeStationString(value))
+    // --- 3. GOOGLE ASSISTANT (URIs) ---
+    runCatching {
+        ::contextFromJsonFingerprint.hookMethod {
+            fun safeRemoveStation(field: Field?, obj: Any?) {
+                if (field == null || obj == null) return
+                runCatching {
+                    val value = field.get(obj) as? String ?: return
+                    field.set(obj, UnlockPremiumPatch.removeStationString(value))
+                }
             }
-        }
-
-        after { param ->
-            val result = param.result ?: return@after
-            val clazz = result.javaClass
-            safeRemoveStation(clazz.findField("uri"), result)
-            safeRemoveStation(clazz.findField("url"), result)
+            after { param ->
+                val res = param.result ?: return@after
+                safeRemoveStation(res.javaClass.findField("uri"), res)
+                safeRemoveStation(res.javaClass.findField("url"), res)
+            }
         }
     }
 
-    // --- 4. ANTI-SHUFFLE (GOOGLE ASSISTANT) ---
+    // --- 4. ANTI-SHUFFLE ---
     runCatching {
         XposedHelpers.findAndHookMethod(
             "com.spotify.player.model.command.options.AutoValue_PlayerOptionOverrides\$Builder",
-            classLoader,
-            "build",
+            classLoader, "build",
             object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     param.thisObject.callMethod("shufflingContext", false)
                 }
-            })
-    }.onFailure { Logger.printDebug { "PlayerOptionOverrides hook fallito: ${it.message}" } }
-
-    // --- 5. PULIZIA CONTEXT MENU (RIMUOVI ADS) ---
-    val contextMenuViewModelClazz = ::contextMenuViewModelClass.clazz
-    XposedBridge.hookAllConstructors(contextMenuViewModelClazz, object : XC_MethodHook() {
-        val isPremiumUpsell = ::isPremiumUpsellField.field
-
-        override fun beforeHookedMethod(param: MethodHookParam) {
-            val parameterTypes = (param.method as Constructor<*>).parameterTypes
-            for (i in param.args.indices) {
-                if (parameterTypes[i].name != "java.util.List") continue
-                val original = param.args[i] as? List<*> ?: continue
-
-                // Filtriamo gli elementi che portano alla pubblicità Premium
-                val filtered = original.filter { item ->
-                    val vm = item?.callMethod("getViewModel")
-                    vm?.let { isPremiumUpsell.get(it) as? Boolean } != true
-                }
-                param.args[i] = filtered
             }
-        }
-    })
-
-    // --- 6. RIMOZIONE SEZIONI ADS (HOME & BROWSE) ---
-    // Per la Home
-    ::homeStructureGetSectionsFingerprint.hookMethod {
-        after { param ->
-            val sections = param.result as? MutableList<*> ?: return@after
-            runCatching {
-                // Forza la lista a essere modificabile (evita l'errore di lista immutabile)
-                sections.javaClass.findFirstFieldByExactType(Boolean::class.java).set(sections, true)
-                UnlockPremiumPatch.removeHomeSections(sections)
-            }
-        }
+        )
     }
 
-    // Per il Browse
-    ::browseStructureGetSectionsFingerprint.hookMethod {
-        after { param ->
-            val sections = param.result as? MutableList<*> ?: return@after
-            runCatching {
-                // Forza la lista a essere modificabile
-                sections.javaClass.findFirstFieldByExactType(Boolean::class.java).set(sections, true)
-                UnlockPremiumPatch.removeBrowseSections(sections)
+    // --- 5. PULIZIA CONTEXT MENU (ANTI-CRASH) ---
+    runCatching {
+        val menuClazz = ::contextMenuViewModelClass.clazz
+        XposedBridge.hookAllConstructors(menuClazz, object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                val isPremiumUpsell = ::isPremiumUpsellField.field
+                val parameterTypes = (param.method as Constructor<*>).parameterTypes
+                for (i in param.args.indices) {
+                    if (parameterTypes[i].name != "java.util.List") continue
+                    val original = param.args[i] as? List<*> ?: continue
+
+                    // Creiamo una NUOVA lista filtrata per evitare UnsupportedOperationException (liste immutabili)
+                    param.args[i] = original.filter { item ->
+                        runCatching {
+                            val vm = item?.callMethod("getViewModel")
+                            vm?.let { isPremiumUpsell.get(it) as? Boolean } != true
+                        }.getOrDefault(true)
+                    }
+                }
             }
-        }
+        })
+    }
+
+    // --- 6. RIMOZIONE SEZIONI ADS (HOME & BROWSE) ---
+    fun safePatchSections(param: XC_MethodHook.MethodHookParam, isHome: Boolean) {
+        val list = param.result as? List<*> ?: return
+        runCatching {
+            // Nelle nuove versioni non cerchiamo più il campo Boolean 'isMutable'.
+            // Creiamo invece una copia mutabile, la patchiamo e la riassegniamo.
+            val mutableList = list.toMutableList()
+            if (isHome) UnlockPremiumPatch.removeHomeSections(mutableList)
+            else UnlockPremiumPatch.removeBrowseSections(mutableList)
+            param.result = mutableList
+        }.onFailure { Logger.printDebug { "Sezioni ${if(isHome) "Home" else "Browse"} fallite: ${it.message}" } }
+    }
+
+    runCatching {
+        ::homeStructureGetSectionsFingerprint.hookMethod { after { safePatchSections(it, true) } }
+        ::browseStructureGetSectionsFingerprint.hookMethod { after { safePatchSections(it, false) } }
     }
 
     // --- 7. BLOCCO POPUP ADS (PENDRAGON) ---
-    // Simula un errore di rete naturale invece di bloccare la chiamata
-    val replaceWithRxError = object : XC_MethodHook() {
-        val justMethod = DexMethod("Lio/reactivex/rxjava3/core/Single;->just(Ljava/lang/Object;)Lio/reactivex/rxjava3/core/Single;").toMethod()
-        val onErrorField = DexField("Lio/reactivex/rxjava3/internal/operators/single/SingleOnErrorReturn;->b:Lio/reactivex/rxjava3/functions/Function;").toField()
-
-        override fun afterHookedMethod(param: MethodHookParam) {
-            if (!param.result.javaClass.name.endsWith("SingleOnErrorReturn")) return
-            runCatching {
-                val errorFunc = onErrorField.get(param.result)
-                param.result = justMethod.invoke(null, errorFunc)
+    runCatching {
+        val replaceWithRxError = object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val res = param.result ?: return
+                if (!res.javaClass.name.endsWith("SingleOnErrorReturn")) return
+                runCatching {
+                    val justMethod = DexMethod("Lio/reactivex/rxjava3/core/Single;->just(Ljava/lang/Object;)Lio/reactivex/rxjava3/core/Single;").toMethod()
+                    val onErrorField = DexField("Lio/reactivex/rxjava3/internal/operators/single/SingleOnErrorReturn;->b:Lio/reactivex/rxjava3/functions/Function;").toField()
+                    param.result = justMethod.invoke(null, onErrorField.get(res))
+                }
             }
         }
+        ::pendragonJsonFetchMessageRequestFingerprint.hookMethod(replaceWithRxError)
+        ::pendragonJsonFetchMessageListRequestFingerprint.hookMethod(replaceWithRxError)
     }
-
-    ::pendragonJsonFetchMessageRequestFingerprint.hookMethod(replaceWithRxError)
-    ::pendragonJsonFetchMessageListRequestFingerprint.hookMethod(replaceWithRxError)
 }
