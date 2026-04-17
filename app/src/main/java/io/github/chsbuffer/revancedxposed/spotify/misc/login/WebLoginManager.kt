@@ -28,7 +28,14 @@ object WebLoginManager {
             )
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
+            settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+            settings.setSupportMultipleWindows(true)
+            settings.javaScriptCanOpenWindowsAutomatically = true
         }
+
+        webView.removeJavascriptInterface("searchBoxJavaBridge_")
+        webView.removeJavascriptInterface("accessibility")
+        webView.removeJavascriptInterface("accessibilityTraversal")
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {

@@ -64,4 +64,13 @@ fun StealthMode(classLoader: ClassLoader) {
             }
         })
     }
+
+    runCatching {
+        val webViewClass = XposedHelpers.findClass("android.webkit.WebView", classLoader)
+        XposedHelpers.findAndHookMethod(webViewClass, "setWebContentsDebuggingEnabled", Boolean::class.java, object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                param.args[0] = false // Impedisce a Spotify di fare il debug della nostra WebView
+            }
+        })
+    }
 }
