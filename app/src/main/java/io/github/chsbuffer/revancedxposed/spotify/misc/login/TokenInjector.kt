@@ -5,9 +5,8 @@ import android.os.Bundle
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
-import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 
-fun SpotifyHook.setupIntegratedLogin() {
+fun setupIntegratedLogin() {
 
     // 1. HOOK PER IL LOGIN AUTOMATICO E INIEZIONE
     XposedHelpers.findAndHookMethod(Activity::class.java, "onCreate", Bundle::class.java, object : XC_MethodHook() {
@@ -39,24 +38,36 @@ private fun injectCookieDynamically(token: String) {
     runCatching {
         val cm = android.webkit.CookieManager.getInstance()
 
-        // Spotify usa diversi domini, copriamoli i principali
-        val domains = listOf(".spotify.com", ".http://googleusercontent.com/spotify.com/9", "accounts.spotify.com")
+        // Permettiamo i cookie di terze parti (spesso necessario per Spotify)
+        cm.setAcceptCookie(true)
+
+        // Domini su cui Spotify si aspetta il token
+        val domains = listOf("spotify.com", ".spotify.com", "accounts.spotify.com")
 
         domains.forEach { domain ->
-            val cookieStr = "sp_dc=$token; Domain=$domain; Path=/; Secure; HttpOnly"
-            cm.setCookie(domain, cookieStr)
+            // Pulizia: rimuoviamo eventuali spazi o punti extra
+            val cookieStr = "sp_dc=$token; domain=$domain; path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax"
+
+            // Usiamo l'URL HTTPS completo per l'iniezione, altrimenti Android 15 lo scarta
+            val url = "https://${domain.removePrefix(".")}"
+            cm.setCookie(url, cookieStr)
         }
 
-        // FORZIAMO il salvataggio immediato su disco
         cm.flush()
 
-        XposedBridge.log("TOKEN-INJECTOR: Cookie iniettato e flush eseguito su domini: ${domains.joinToString()}")
+        XposedBridge.log("TOKEN-INJECTOR: Tentata iniezione su: ${domains.joinToString()}")
 
-        // Verifica post-iniezione: leggiamo cosa c'è ora nel CookieManager
-        val check = cm.getCookie(".spotify.com")
+        // Verifica migliorata
+        val check = cm.getCookie("https://spotify.com")
         XposedBridge.log("TOKEN-INJECTOR: Verifica CookieManager per spotify.com: ${if (check?.contains("sp_dc") == true) "PRESENTE" else "ASSENTE"}")
 
+        if (check?.contains("sp_dc") == false) {
+            XposedBridge.log("TOKEN-INJECTOR: Il sistema ha scartato il cookie. Provo metodo forzato...")
+            // Tentativo disperato senza attributi extra
+            cm.setCookie("https://spotify.com", "sp_dc=$token")
+        }
+
     }.onFailure {
-        XposedBridge.log("TOKEN-INJECTOR: Errore durante l'iniezione dinamica: ${it.message}")
+        XposedBridge.log("TOKEN-INJECTOR: Errore: ${it.message}")
     }
 }
