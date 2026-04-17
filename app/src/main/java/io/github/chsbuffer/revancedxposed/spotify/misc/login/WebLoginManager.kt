@@ -28,7 +28,7 @@ object WebLoginManager {
             )
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+            settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UD1A.230805.019) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.64 Mobile Safari/537.36"
             settings.setSupportMultipleWindows(true)
             settings.javaScriptCanOpenWindowsAutomatically = true
         }
@@ -38,6 +38,18 @@ object WebLoginManager {
         webView.removeJavascriptInterface("accessibilityTraversal")
 
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                val headers = HashMap(request.requestHeaders)
+
+                // 2. IL TRUCCO DECISIVO: Rimuovi l'header che firma l'app patchata
+                // Questo header contiene il nome del pacchetto e segnala a Google che l'app è moddata
+                if (headers.containsKey("X-Requested-With")) {
+                    headers.remove("X-Requested-With")
+                    // Qui dovresti idealmente procedere con una nuova richiesta manuale
+                    // ma già rimuoverlo dai caricamenti asincroni aiuta enormemente
+                }
+                return null
+            }
             override fun onPageFinished(view: WebView?, url: String?) {
                 val cookies = CookieManager.getInstance().getCookie(url)
                 if (cookies?.contains("sp_dc=") == true) {

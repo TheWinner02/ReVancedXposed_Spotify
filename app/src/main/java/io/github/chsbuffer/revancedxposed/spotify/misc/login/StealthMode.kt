@@ -1,75 +1,73 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.login
 
 import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 
 fun StealthMode(classLoader: ClassLoader) {
-    val TAG = "STEALTH-SHIELD"
 
-    // 1. PULIZIA DELLO STACKTRACE (Il metodo di rilevamento più comune)
-    // Quando Spotify genera un errore interno per controllare chi lo sta chiamando,
-    // noi intercettiamo la lettura e nascondiamo i nomi "sospetti".
+    // 1. STACKTRACE: Nascondi i colpevoli nei log di errore
     runCatching {
         XposedHelpers.findAndHookMethod(StackTraceElement::class.java, "getClassName", object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                val className = param.result as String? ?: return
-
-                if (className.contains("xposed", ignoreCase = true) ||
-                    className.contains("lsposed", ignoreCase = true) ||
-                    className.contains("revanced", ignoreCase = true) ||
-                    className.contains("edxp", ignoreCase = true) ||
-                    className.contains("chsbuffer", ignoreCase = true)) { // Il tuo pacchetto
-
-                    // Sostituiamo il nostro codice con una classe di sistema innocua
+                val className = param.result as? String? ?: return
+                if (className.contains("xposed", true) || className.contains("revanced", true) ||
+                    className.contains("chsbuffer", true) || className.contains("patch", true)) {
                     param.result = "android.app.ActivityThread"
                 }
             }
         })
-        XposedBridge.log("$TAG: StackTrace Obfuscator attivato.")
     }
 
-    // 2. ACCECAMENTO DEL PACKAGEMANAGER (Nascondiamo il modulo)
-    // Se Spotify cerca di vedere se hai installato moduli o app sospette,
-    // facciamo credere ad Android che l'app non esista.
+    // 2. PACKAGEMANAGER: Nascondi il modulo e Xposed
     runCatching {
-        val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", null)
+        // Usiamo la classe base IPackageManager per intercettare tutto a livello più basso
+        val pmClassName = $$"android.content.pm.IPackageManager$Stub$Proxy"
+        val myModuleName = "io.github.chsbuffer.revancedxposed"
 
-        // Hook su getPackageInfo (quando cerca un'app specifica)
-        XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                val pkgName = param.args[0] as String
-
-                // INSERISCI QUI IL NOME DEL PACCHETTO DEL TUO MODULO
-                val myModuleName = "io.github.chsbuffer.revancedxposed"
-
-                if (pkgName == myModuleName || pkgName.contains("xposed")) {
-                    XposedBridge.log("$TAG: Spotify ha cercato di rilevare $pkgName. Bloccato!")
-                    // Lanciamo l'eccezione nativa di Android "App non trovata"
-                    param.throwable = android.content.pm.PackageManager.NameNotFoundException(pkgName)
+        XposedHelpers.findAndHookMethod(pmClassName, classLoader, "getPackageInfo",
+            String::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val pkgName = param.args[0] as String
+                    if (pkgName == myModuleName || pkgName.contains("xposed") || pkgName.contains("lsposed")) {
+                        param.throwable = android.content.pm.PackageManager.NameNotFoundException(pkgName)
+                    }
                 }
-            }
-        })
+            })
     }
 
-    // 3. BYPASS DELLE VARIABILI DI SISTEMA (System.getProperty)
-    // Nascondiamo eventuali proprietà iniettate dai framework Xposed
+    // 3. FILESYSTEM (OTTIMIZZATO): Nascondi libpatch.so e cartelle sospette
     runCatching {
-        XposedHelpers.findAndHookMethod(System::class.java, "getProperty", String::class.java, object : XC_MethodHook() {
+        XposedHelpers.findAndHookMethod(java.io.File::class.java, "exists", object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                val key = param.args[0] as String
-                if (key.contains("vxp") || key.contains("xposed")) {
-                    param.result = null
+                val file = param.thisObject as java.io.File
+                val name = file.name // Usiamo il nome invece del path intero per velocità
+                if (name.contains("libpatch", true) || name.contains("xposed", true) ||
+                    name.contains("revanced", true)) {
+                    param.result = false
                 }
             }
         })
     }
 
+    // 4. WEBVIEW: Impedisci il debugging remoto
     runCatching {
         val webViewClass = XposedHelpers.findClass("android.webkit.WebView", classLoader)
         XposedHelpers.findAndHookMethod(webViewClass, "setWebContentsDebuggingEnabled", Boolean::class.java, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                param.args[0] = false // Impedisce a Spotify di fare il debug della nostra WebView
+                param.args[0] = false
+            }
+        })
+    }
+
+    // 5. SYSTEM PROPERTIES: Nascondi i flag di oPatch/Xposed
+    runCatching {
+        val systemProperties = XposedHelpers.findClass("android.os.SystemProperties", classLoader)
+        XposedHelpers.findAndHookMethod(systemProperties, "get", String::class.java, object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val key = param.args[0] as String
+                if (key.contains("xposed", true) || key.contains("patch", true) || key.contains("revanced", true)) {
+                    param.result = ""
+                }
             }
         })
     }

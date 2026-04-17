@@ -36,6 +36,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return targetPackageName == packageName
     }
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
+        StealthMode(lpparam.classLoader)
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
@@ -80,7 +81,6 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         inContext(lpparam) { app ->
             this.app = app
-            StealthMode(lpparam.classLoader)
             setupIntegratedLogin(lpparam.classLoader)
 
             // Carichiamo le preferenze una volta sola
