@@ -7,7 +7,6 @@ import android.graphics.Color
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.LinearLayout
-import java.util.HashMap
 
 object WebLoginManager {
 
@@ -28,7 +27,6 @@ object WebLoginManager {
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                databaseEnabled = true
                 setSupportMultipleWindows(true)
                 // Usiamo un User-Agent ancora più recente per evitare sospetti
                 userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UD1A.230805.019) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.40 Mobile Safari/537.36"
@@ -48,10 +46,7 @@ object WebLoginManager {
 
                 // Se rileviamo che Spotify sta cercando di forzare un'autenticazione nativa
                 // (che fallirebbe su oPatch), forziamo il caricamento web puro
-                if (url.contains("spotify://") || url.contains("android-app://")) {
-                    return true
-                }
-                return false
+                return url.contains("spotify://") || url.contains("android-app://")
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -89,7 +84,7 @@ object WebLoginManager {
 
         // Se il login standard fallisce, usa questo URL che forza la versione Web "Legacy"
         // molto più facile da bypassare rispetto alla nuova versione con Google Auth integrato.
-        webView.loadUrl("https://accounts.spotify.com/it/login?continue=https:%2F%2Fopen.spotify.com%2F")
+        webView.loadUrl("https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
 
         dialog.show()
     }
