@@ -47,7 +47,7 @@ fun setupIntegratedLogin(classLoader: ClassLoader) {
                     XposedHelpers.callMethod(builder, "header", "Cookie", "sp_dc=$token")
 
                     // Opzionale: decommenta per vedere se le chiamate vengono patchate
-                    // XposedBridge.log("NETWORK-DEBUG: Header sp_dc iniettato in OkHttp")
+                    XposedBridge.log("NETWORK-DEBUG: Header sp_dc iniettato in OkHttp")
                 }
             })
             XposedBridge.log("TOKEN-INJECTOR: Hook OkHttp installato con successo!")
