@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.LinearLayout
+import de.robv.android.xposed.XposedBridge
 
 object WebLoginManager {
 
@@ -50,30 +51,22 @@ object WebLoginManager {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
-                // INIEZIONE JS AVANZATA: Nascondiamo l'ambiente WebView a Google ReCaptcha
-                view?.evaluateJavascript("""
-                    (function() {
-                        // Nasconde che è una WebView
-                        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                        window.chrome = { runtime: {} };
-                        
-                        // Rimuove eventuali plugin "Xposed" rilevabili via JS
-                        Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-                        Object.defineProperty(navigator, 'languages', {get: () => ['it-IT', 'it', 'en-US', 'en']});
-                    })();
-                """.trimIndent(), null)
-
-                // CATTURA TOKEN
                 val cookies = CookieManager.getInstance().getCookie(url)
-                if (cookies?.contains("sp_dc=") == true) {
-                    val token = cookies.split(";")
+
+                // Cerchiamo sp_dc (il token di sessione) o sp_key
+                if (cookies != null && (cookies.contains("sp_dc=") || cookies.contains("sp_key="))) {
+                    val spDc = cookies.split(";")
                         .find { it.trim().startsWith("sp_dc=") }
                         ?.substringAfter("=")
 
-                    if (token != null) {
-                        AuthPrefs.saveToken(activity, token)
+                    if (spDc != null) {
+                        XposedBridge.log("SPOOF: Token catturato con successo!")
+                        AuthPrefs.saveToken(activity, spDc)
                         dialog.dismiss()
-                        activity.recreate()
+
+                        // Invece di recreate(), forziamo la chiusura e riapertura manuale
+                        // per pulire i processi nativi "congelati"
+                        activity.finishAffinity()
                     }
                 }
             }
@@ -84,7 +77,7 @@ object WebLoginManager {
 
         // Se il login standard fallisce, usa questo URL che forza la versione Web "Legacy"
         // molto più facile da bypassare rispetto alla nuova versione con Google Auth integrato.
-        webView.loadUrl("https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
+        webView.loadUrl("https://accounts.spotify.com/it/login?continue=https%3A%2F%2Fopen.spotify.com%2F")
 
         dialog.show()
     }
