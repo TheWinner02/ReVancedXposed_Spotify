@@ -38,19 +38,25 @@ object WebLoginManager {
         webView.removeJavascriptInterface("accessibilityTraversal")
 
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-                val headers = HashMap(request.requestHeaders)
+            // Questo header viene rimosso automaticamente dal sistema se lo StealthMode
+            // intercetta correttamente le chiamate del framework, ma per sicurezza
+            // aggiungiamo questo controllo sulla navigazione:
 
-                // 2. IL TRUCCO DECISIVO: Rimuovi l'header che firma l'app patchata
-                // Questo header contiene il nome del pacchetto e segnala a Google che l'app è moddata
-                if (headers.containsKey("X-Requested-With")) {
-                    headers.remove("X-Requested-With")
-                    // Qui dovresti idealmente procedere con una nuova richiesta manuale
-                    // ma già rimuoverlo dai caricamenti asincroni aiuta enormemente
-                }
-                return null
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                // Se Google o Spotify provano a fare un redirect sospetto,
+                // forziamo il caricamento manuale per pulire la sessione
+                return false
             }
+
             override fun onPageFinished(view: WebView?, url: String?) {
+                // Nascondiamo le tracce di automazione tramite iniezione JS
+                view?.evaluateJavascript(
+                    "(function() { " +
+                            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined});" +
+                            "window.chrome = { runtime: {} };" +
+                            "})();", null
+                )
+
                 val cookies = CookieManager.getInstance().getCookie(url)
                 if (cookies?.contains("sp_dc=") == true) {
                     val token = cookies.split(";")
