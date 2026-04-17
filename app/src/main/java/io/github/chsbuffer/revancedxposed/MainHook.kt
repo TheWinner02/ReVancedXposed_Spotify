@@ -37,7 +37,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return targetPackageName == packageName
     }
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
-        Spoof.applyAll(lpparam.classLoader)
+        Spoof.apply(lpparam.classLoader)
         StealthMode(lpparam.classLoader)
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
