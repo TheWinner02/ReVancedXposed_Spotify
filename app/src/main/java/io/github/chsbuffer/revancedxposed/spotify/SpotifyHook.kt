@@ -7,7 +7,6 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
 import io.github.chsbuffer.revancedxposed.BaseHook
 import io.github.chsbuffer.revancedxposed.injectHostClassLoaderToSelf
 import io.github.chsbuffer.revancedxposed.spotify.misc.UnlockPremium
-import io.github.chsbuffer.revancedxposed.spotify.misc.login.setupIntegratedLogin
 import io.github.chsbuffer.revancedxposed.spotify.misc.logout.LogOutPatch
 import io.github.chsbuffer.revancedxposed.spotify.misc.privacy.SanitizeSharingLinks
 import io.github.chsbuffer.revancedxposed.spotify.misc.widgets.FixThirdPartyLaunchersWidgets
@@ -16,7 +15,6 @@ import io.github.chsbuffer.revancedxposed.spotify.misc.widgets.FixThirdPartyLaun
 class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, lpparam) {
     override val hooks = arrayOf(
         ::Extension,
-        ::setupIntegratedLogin,
         ::SanitizeSharingLinks,
         ::UnlockPremium,
         ::LogOutPatch,

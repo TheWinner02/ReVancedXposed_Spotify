@@ -18,6 +18,8 @@ import io.github.chsbuffer.revancedxposed.spotify.RoundyUIHook
 import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
+import io.github.chsbuffer.revancedxposed.spotify.misc.login.setupIntegratedLogin
+
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var startupParam: StartupParam
     lateinit var lpparam: LoadPackageParam
@@ -77,6 +79,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         inContext(lpparam) { app ->
             this.app = app
+            setupIntegratedLogin(lpparam.classLoader)
 
             // Carichiamo le preferenze una volta sola
             val prefs = app.getSharedPreferences("spotify_prefs", 0)

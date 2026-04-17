@@ -1,12 +1,13 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.login
 
 import android.app.Activity
+import android.app.AndroidAppHelper
 import android.os.Bundle
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 
-fun setupIntegratedLogin() {
+fun setupIntegratedLogin(classLoader: ClassLoader) {
 
     // 1. HOOK PER IL LOGIN AUTOMATICO E INIEZIONE
     XposedHelpers.findAndHookMethod(Activity::class.java, "onCreate", Bundle::class.java, object : XC_MethodHook() {
@@ -31,6 +32,31 @@ fun setupIntegratedLogin() {
             }
         }
     })
+    // 2. INIEZIONE DI RETE DIRETTA (Header Injection)
+    runCatching {
+        val requestBuilderClass = XposedHelpers.findClassIfExists("okhttp3.Request\$Builder", classLoader)
+        if (requestBuilderClass != null) {
+            XposedBridge.hookAllMethods(requestBuilderClass, "build", object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    // Recuperiamo il token (AuthPrefs deve essere accessibile)
+                    // Usiamo il context dell'app se possibile, o un fallback
+                    val token = AuthPrefs.getSavedToken(AndroidAppHelper.currentApplication()) ?: return
+
+                    val builder = param.thisObject
+                    // Inseriamo il cookie direttamente nell'Header HTTP
+                    XposedHelpers.callMethod(builder, "header", "Cookie", "sp_dc=$token")
+
+                    // Opzionale: decommenta per vedere se le chiamate vengono patchate
+                    // XposedBridge.log("NETWORK-DEBUG: Header sp_dc iniettato in OkHttp")
+                }
+            })
+            XposedBridge.log("TOKEN-INJECTOR: Hook OkHttp installato con successo!")
+        } else {
+            XposedBridge.log("TOKEN-INJECTOR: Classe OkHttp non trovata (potrebbe essere offuscata)")
+        }
+    }.onFailure {
+        XposedBridge.log("TOKEN-INJECTOR: Errore nell'hook OkHttp: ${it.message}")
+    }
 }
 
 // Funzione di supporto per iniettare il cookie nel CookieManager
