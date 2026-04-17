@@ -64,6 +64,24 @@ fun setupIntegratedLogin(classLoader: ClassLoader) {
             XposedBridge.log("$TAG: Hook OkHttp attivo.")
         }
     }
+
+    // 4. BYPASS LOGIC: Forza Spotify a credere di essere loggato
+    runCatching {
+        // Cerchiamo la classe che decide se mostrare il Login o la Home
+        // In molte versioni è legata a "SessionState"
+        val sessionClass = XposedHelpers.findClassIfExists("com.spotify.session.SessionState", classLoader)
+        if (sessionClass != null) {
+            XposedBridge.hookAllMethods(sessionClass, "isLoggedIn", object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val token = AuthPrefs.getSavedToken(AndroidAppHelper.currentApplication())
+                    if (token != null) {
+                        param.result = true // Diciamo all'app: "Sì, l'utente è loggato!"
+                    }
+                }
+            })
+            XposedBridge.log("TOKEN-INJECTOR: Forza-Login attivato!")
+        }
+    }
 }
 
 private fun injectCookieDynamically(token: String) {
