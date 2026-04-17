@@ -8,59 +8,58 @@ import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 
 fun setupIntegratedLogin(classLoader: ClassLoader) {
+    val TAG = "TOKEN-INJECTOR"
 
-    // 1. HOOK PER IL LOGIN AUTOMATICO E INIEZIONE
+    // 1. FORZA IL TOKEN IN OGNI MOMENTO (Hook su CookieManager)
+    // Hookiamo il metodo 'setAcceptCookie' perché Spotify lo chiama sempre all'avvio
+    XposedHelpers.findAndHookMethod("android.webkit.CookieManager", classLoader, "setAcceptCookie", Boolean::class.java, object : XC_MethodHook() {
+        override fun beforeHookedMethod(param: MethodHookParam) {
+            val appContext = AndroidAppHelper.currentApplication() ?: return
+            val token = AuthPrefs.getSavedToken(appContext) ?: return
+
+            XposedBridge.log("$TAG: Inizializzazione forzata rilevata. Inietto cookie...")
+            injectCookieDynamically(token)
+        }
+    })
+
+    // 2. HOOK ACTIVITY PER WEBVIEW E REFRESH
     XposedHelpers.findAndHookMethod(Activity::class.java, "onCreate", Bundle::class.java, object : XC_MethodHook() {
         override fun afterHookedMethod(param: MethodHookParam) {
             val activity = param.thisObject as Activity
-            val context = activity.applicationContext
-
-            // Proviamo a leggere il token dal pacchetto locale
-            val token = AuthPrefs.getSavedToken(context)
+            val token = AuthPrefs.getSavedToken(activity)
             val className = activity.javaClass.name
 
-            // CASO A: Non abbiamo il token e siamo nella schermata di login
             if (token == null && className.contains("login", ignoreCase = true)) {
-                XposedBridge.log("TOKEN-INJECTOR: Token mancante, apro WebView...")
                 WebLoginManager.showLoginOverlay(activity)
-                return
-            }
-
-            // CASO B: Abbiamo il token, iniettiamolo nei cookie per questa sessione
-            if (token != null) {
+            } else if (token != null) {
+                // Se abbiamo il token, forziamo l'iniezione anche qui
                 injectCookieDynamically(token)
             }
         }
     })
-    // 2. INIEZIONE DI RETE DINAMICA (Header Injection con ricerca classi)
+
+    // 3. HOOK DI RETE (PIANO E): Hook su intercettazione Header di basso livello
+    // Proviamo a colpire la classe che gestisce le proprietà delle connessioni
     runCatching {
-        // Cerchiamo la classe che funge da Builder per OkHttp
-        // Di solito è l'unica che ha il metodo "header" con due stringhe e ritorna se stessa
-        val requestBuilderClass = XposedHelpers.findClassIfExists("okhttp3.Request\$Builder", classLoader)
-            ?: XposedHelpers.findClassIfExists("com.squareup.okhttp.Request\$Builder", classLoader)
+        val urlConnClass = XposedHelpers.findClass("java.net.URLConnection", null)
+        XposedHelpers.findAndHookMethod(urlConnClass, "setRequestProperty", String::class.java, String::class.java, object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                val key = param.args[0] as String
+                if (key == "Cookie") return // Evitiamo loop infiniti
 
-        if (requestBuilderClass != null) {
-            XposedBridge.hookAllMethods(requestBuilderClass, "build", object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val appContext = AndroidAppHelper.currentApplication() ?: return
-                    val token = AuthPrefs.getSavedToken(appContext) ?: return
+                val appContext = AndroidAppHelper.currentApplication() ?: return
+                val token = AuthPrefs.getSavedToken(appContext) ?: return
 
-                    // Usiamo "header" in modo dinamico
-                    runCatching {
-                        XposedHelpers.callMethod(param.thisObject, "header", "Cookie", "sp_dc=$token")
-                        // LOG DI CONFERMA (Assicurati che non sia commentato!)
-                        XposedBridge.log("NETWORK-DEBUG: Header sp_dc iniettato con successo!")
-                    }
+                val connection = param.thisObject as java.net.URLConnection
+                val url = connection.url.toString()
+
+                if (url.contains("spotify.com")) {
+                    connection.setRequestProperty("Cookie", "sp_dc=$token")
+                    // Log per essere sicuri al 100% che la rete sia colpita
+                    XposedBridge.log("NETWORK-DEBUG: Header iniettato via URLConnection")
                 }
-            })
-            XposedBridge.log("TOKEN-INJECTOR: Hook OkHttp installato.")
-        } else {
-            XposedBridge.log("TOKEN-INJECTOR: ATTENZIONE - OkHttp non trovato, provo scansione profonda...")
-            // Se arriviamo qui, Spotify ha offuscato pesantemente OkHttp.
-            // Possiamo provare a hookare direttamente il CookieManager interno di OkHttp se necessario.
-        }
-    }.onFailure {
-        XposedBridge.log("TOKEN-INJECTOR: Errore critico OkHttp: ${it.message}")
+            }
+        })
     }
 }
 
