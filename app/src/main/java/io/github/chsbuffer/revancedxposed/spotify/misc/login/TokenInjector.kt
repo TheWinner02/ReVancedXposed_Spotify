@@ -38,10 +38,25 @@ fun SpotifyHook.setupIntegratedLogin() {
 private fun injectCookieDynamically(token: String) {
     runCatching {
         val cm = android.webkit.CookieManager.getInstance()
-        val cookieStr = "sp_dc=$token; Domain=.spotify.com; Path=/; Secure; HttpOnly"
-        cm.setCookie(".spotify.com", cookieStr)
-        // XposedBridge.log("TOKEN-INJECTOR: Cookie iniettato correttamente")
+
+        // Spotify usa diversi domini, copriamoli i principali
+        val domains = listOf(".spotify.com", ".http://googleusercontent.com/spotify.com/9", "accounts.spotify.com")
+
+        domains.forEach { domain ->
+            val cookieStr = "sp_dc=$token; Domain=$domain; Path=/; Secure; HttpOnly"
+            cm.setCookie(domain, cookieStr)
+        }
+
+        // FORZIAMO il salvataggio immediato su disco
+        cm.flush()
+
+        XposedBridge.log("TOKEN-INJECTOR: Cookie iniettato e flush eseguito su domini: ${domains.joinToString()}")
+
+        // Verifica post-iniezione: leggiamo cosa c'è ora nel CookieManager
+        val check = cm.getCookie(".spotify.com")
+        XposedBridge.log("TOKEN-INJECTOR: Verifica CookieManager per spotify.com: ${if (check?.contains("sp_dc") == true) "PRESENTE" else "ASSENTE"}")
+
     }.onFailure {
-        XposedBridge.log("TOKEN-INJECTOR: Errore iniezione cookie: ${it.message}")
+        XposedBridge.log("TOKEN-INJECTOR: Errore durante l'iniezione dinamica: ${it.message}")
     }
 }

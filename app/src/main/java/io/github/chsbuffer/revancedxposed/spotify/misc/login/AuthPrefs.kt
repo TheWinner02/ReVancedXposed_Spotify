@@ -1,6 +1,7 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.login
 
 import android.content.Context
+import de.robv.android.xposed.XposedBridge
 
 object AuthPrefs {
     const val PREFS_NAME = "spotify_auth_prefs"
@@ -15,6 +16,14 @@ object AuthPrefs {
     // Lettura: legge direttamente dalle preferenze locali
     fun getSavedToken(context: Context): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getString(KEY_SP_DC, null)
+        val token = prefs.getString(KEY_SP_DC, null)
+
+        // DEBUG LOG
+        if (token != null) {
+            XposedBridge.log("AUTH-DEBUG: Token letto con successo dal pacchetto Spotify (${token.take(8)}...)")
+        } else {
+            XposedBridge.log("AUTH-DEBUG: Nessun token trovato nelle preferenze locali.")
+        }
+        return token
     }
 }
