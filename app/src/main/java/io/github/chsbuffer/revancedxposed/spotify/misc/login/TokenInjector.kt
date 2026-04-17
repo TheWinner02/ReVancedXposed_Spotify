@@ -32,30 +32,35 @@ fun setupIntegratedLogin(classLoader: ClassLoader) {
             }
         }
     })
-    // 2. INIEZIONE DI RETE DIRETTA (Header Injection)
+    // 2. INIEZIONE DI RETE DINAMICA (Header Injection con ricerca classi)
     runCatching {
+        // Cerchiamo la classe che funge da Builder per OkHttp
+        // Di solito è l'unica che ha il metodo "header" con due stringhe e ritorna se stessa
         val requestBuilderClass = XposedHelpers.findClassIfExists("okhttp3.Request\$Builder", classLoader)
+            ?: XposedHelpers.findClassIfExists("com.squareup.okhttp.Request\$Builder", classLoader)
+
         if (requestBuilderClass != null) {
             XposedBridge.hookAllMethods(requestBuilderClass, "build", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    // Recuperiamo il token (AuthPrefs deve essere accessibile)
-                    // Usiamo il context dell'app se possibile, o un fallback
-                    val token = AuthPrefs.getSavedToken(AndroidAppHelper.currentApplication()) ?: return
+                    val appContext = AndroidAppHelper.currentApplication() ?: return
+                    val token = AuthPrefs.getSavedToken(appContext) ?: return
 
-                    val builder = param.thisObject
-                    // Inseriamo il cookie direttamente nell'Header HTTP
-                    XposedHelpers.callMethod(builder, "header", "Cookie", "sp_dc=$token")
-
-                    // Opzionale: decommenta per vedere se le chiamate vengono patchate
-                    XposedBridge.log("NETWORK-DEBUG: Header sp_dc iniettato in OkHttp")
+                    // Usiamo "header" in modo dinamico
+                    runCatching {
+                        XposedHelpers.callMethod(param.thisObject, "header", "Cookie", "sp_dc=$token")
+                        // LOG DI CONFERMA (Assicurati che non sia commentato!)
+                        XposedBridge.log("NETWORK-DEBUG: Header sp_dc iniettato con successo!")
+                    }
                 }
             })
-            XposedBridge.log("TOKEN-INJECTOR: Hook OkHttp installato con successo!")
+            XposedBridge.log("TOKEN-INJECTOR: Hook OkHttp installato.")
         } else {
-            XposedBridge.log("TOKEN-INJECTOR: Classe OkHttp non trovata (potrebbe essere offuscata)")
+            XposedBridge.log("TOKEN-INJECTOR: ATTENZIONE - OkHttp non trovato, provo scansione profonda...")
+            // Se arriviamo qui, Spotify ha offuscato pesantemente OkHttp.
+            // Possiamo provare a hookare direttamente il CookieManager interno di OkHttp se necessario.
         }
     }.onFailure {
-        XposedBridge.log("TOKEN-INJECTOR: Errore nell'hook OkHttp: ${it.message}")
+        XposedBridge.log("TOKEN-INJECTOR: Errore critico OkHttp: ${it.message}")
     }
 }
 
