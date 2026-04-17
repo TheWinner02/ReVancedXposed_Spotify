@@ -18,8 +18,7 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
         ::SanitizeSharingLinks,
         ::UnlockPremium,
         ::LogOutPatch,
-        ::FixThirdPartyLaunchersWidgets,
-        ::g
+        ::FixThirdPartyLaunchersWidgets
     )
 
     // ══════════════════════════════════════════════════════
@@ -30,9 +29,9 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
     }
 
     // ══════════════════════════════════════════════════════
-    // G → NATIVE HTTP BLOCK
+    // NHB → NATIVE HTTP BLOCK
     // ══════════════════════════════════════════════════════
-    fun g() {
+    fun NHB() {
         runCatching {
 
             val cl = classLoader
