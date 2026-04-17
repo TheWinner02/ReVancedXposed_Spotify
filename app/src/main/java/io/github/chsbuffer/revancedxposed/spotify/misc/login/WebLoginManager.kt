@@ -39,10 +39,9 @@ object WebLoginManager {
                         ?.substringAfter("=")
 
                     if (token != null) {
-                        XposedBridge.log("TOKEN-CAPTURED: Success!")
-                        AuthPrefs.saveToken(context, token)
+                        AuthPrefs.saveToken(activity, token) // Salva nel pacchetto di Spotify
                         dialog.dismiss()
-                        activity.recreate() // Riavvia l'Activity per applicare il login
+                        activity.recreate()
                     }
                 }
             }
