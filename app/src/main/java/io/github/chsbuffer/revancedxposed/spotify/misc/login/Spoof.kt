@@ -1,81 +1,56 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.login
 
-import android.annotation.SuppressLint
-import android.content.pm.PackageInfo
-import android.content.pm.Signature
-import android.os.Build
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedHelpers
 
 object Spoof {
 
-    private const val SPOTIFY_SHA256 = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
-
-    @SuppressLint("PackageManagerGetSignatures") // Silenzia l'avviso deprecation
     fun apply(classLoader: ClassLoader) {
-        val targetPkg = "com.spotify.music"
 
+        // 1. SPOOF USER-AGENT (Copiato dalla patch: Spotify/9.0.58 iOS/17.7.2)
         runCatching {
-            val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
-
-            XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
+            val userAgentClass = XposedHelpers.findClass("com.spotify.cosmos.shared.CosmosUserAgent", classLoader)
+            XposedHelpers.findAndHookMethod(userAgentClass, "get", object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    val pkgName = param.args[0] as String
-                    val flags = param.args[1] as Int
+                    param.result = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
+                }
+            })
+        }
 
-                    if (pkgName == targetPkg) {
-                        val info = param.result as? PackageInfo ?: return
-                        // Passiamo direttamente la costante per evitare l'avviso sul parametro sempre uguale
-                        val fakeSig = Signature(hexStringToByteArray(SPOTIFY_SHA256))
+        // 2. SPOOF CLIENT ID (Copiato dalla patch: il ClientID ufficiale iOS)
+        runCatching {
+            val authConfigClass = XposedHelpers.findClass("com.spotify.auth.AuthConfig", classLoader)
+            XposedHelpers.findAndHookMethod(authConfigClass, "getClientId", object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    param.result = "58bd3c95768941ea9eb4350aaa033eb3"
+                }
+            })
+        }
 
-                        // 1. Vecchie firme (Sempre necessario per compatibilità)
-                        if (flags and 64 != 0) {
-                            @Suppress("DEPRECATION")
-                            info.signatures = arrayOf(fakeSig)
-                        }
+        // 3. BYPASS INTEGRITY (Copiato dalla patch: returnEarly false)
+        runCatching {
+            // Cerchiamo la classe di verifica integrità (il nome cambia, ma cerchiamo il metodo)
+            val integrityClass = XposedHelpers.findClass("com.spotify.preload.IntegrityVerification", classLoader)
+            XposedHelpers.findAndHookMethod(integrityClass, "runVerification", object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    param.result = false // Blocca la verifica sul nascere
+                }
+            })
+        }
 
-                        // 2. Nuove firme SigningInfo (Android 9+)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                            if (flags and 0x08000000 != 0) {
-                                runCatching {
-                                    val signingInfoClass = Class.forName("android.content.pm.SigningInfo")
-                                    val signingInfo = XposedHelpers.newInstance(signingInfoClass)
-                                    val mSigningDetails = XposedHelpers.getObjectField(signingInfo, "mSigningDetails")
-                                    XposedHelpers.setObjectField(mSigningDetails, "signatures", arrayOf(fakeSig))
-
-                                    XposedHelpers.setObjectField(info, "signingInfo", signingInfo)
-                                }
-                            }
-                        }
-                        param.result = info
+        // 4. SPOOF VERSION PROPERTIES (iOS Identity)
+        runCatching {
+            val propertiesClass = XposedHelpers.findClass("com.spotify.base.java.properties.InternalProperties", classLoader)
+            XposedHelpers.findAndHookMethod(propertiesClass, "getProperty", String::class.java, object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    when (param.args[0] as String) {
+                        "client_version" -> param.result = "iphone-9.0.58.558.g200011c"
+                        "os_version" -> param.result = "17.7.2"
+                        "hardware_machine" -> param.result = "iPhone16,1"
+                        "platform" -> param.result = "ios"
                     }
                 }
             })
         }
-
-        // Spoof Installer e Build
-        runCatching {
-            val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
-            XposedHelpers.findAndHookMethod(pmClass, "getInstallerPackageName", String::class.java, object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    if (param.args[0] == targetPkg) param.result = "com.android.vending"
-                }
-            })
-
-            // Spoof dei parametri Build
-            XposedHelpers.setStaticObjectField(Build::class.java, "TAGS", "release-keys")
-            XposedHelpers.setStaticObjectField(Build::class.java, "TYPE", "user")
-        }
-    }
-
-    private fun hexStringToByteArray(hex: String): ByteArray {
-        val len = hex.length
-        val data = ByteArray(len / 2)
-        var i = 0
-        while (i < len) {
-            data[i / 2] = ((Character.digit(hex[i], 16) shl 4) + Character.digit(hex[i + 1], 16)).toByte()
-            i += 2
-        }
-        return data
     }
 }
