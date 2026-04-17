@@ -7,53 +7,47 @@ import de.robv.android.xposed.XposedHelpers
 
 object Spoof {
 
-    // L'hash SHA-256 che hai trovato
+    // Lo SHA-256 originale che hai estratto (senza i due punti)
     private const val SPOTIFY_SHA256 = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
 
     fun apply(classLoader: ClassLoader) {
-        val targetPkg = "com.spotify.music" // Usa il package name reale qui
+        val targetPkg = "com.spotify.music" // Assicurati che sia il nome pacchetto corretto
 
-        // 1. SIGNATURE SPOOFING (Il pezzo forte)
         runCatching {
-            val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
-            XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
+            // Hook su IPackageManager (livello più basso possibile in Java)
+            val pmsClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
+
+            XposedHelpers.findAndHookMethod(pmsClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val pkgName = param.args[0] as String
-                    val flags = param.args[1] as Int
+                    if (pkgName == targetPkg) {
+                        val info = param.result as? PackageInfo ?: return
 
-                    // Se chiedono le firme (flag 64) per Spotify
-                    if (pkgName == targetPkg && (flags and 64 != 0)) {
-                        val info = param.result as PackageInfo
-                        // Creiamo la firma fake usando l'hash convertito
+                        // Inseriamo la firma originale
                         val fakeSig = Signature(hexStringToByteArray(SPOTIFY_SHA256))
+
+                        // Copriamo sia il vecchio sistema (signatures) che il nuovo (signingInfo)
                         info.signatures = arrayOf(fakeSig)
-                        param.result = info
+
+                        runCatching {
+                            val signingInfoClass = XposedHelpers.findClass("android.content.pm.SigningInfo", classLoader)
+                            val signingInfo = XposedHelpers.newInstance(signingInfoClass)
+                            // Qui forziamo il sistema a credere che non ci siano firme multiple (segno di manomissione)
+                            param.result = info
+                        }
                     }
                 }
             })
         }
 
-        // 2. INSTALLER SPOOFING (Per Play Integrity)
-        runCatching {
-            val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
-            XposedHelpers.findAndHookMethod(pmClass, "getInstallerPackageName", String::class.java, object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    if (param.args[0] == targetPkg) param.result = "com.android.vending"
-                }
-            })
-        }
-
-        // 3. BUILD & DEVICE SPOOFING (Per ReCaptcha)
+        // 2. FORZATURA FLAG DI SISTEMA
         runCatching {
             val buildClass = XposedHelpers.findClass("android.os.Build", classLoader)
-            XposedHelpers.setStaticObjectField(buildClass, "MANUFACTURER", "Google")
-            XposedHelpers.setStaticObjectField(buildClass, "MODEL", "Pixel 8")
             XposedHelpers.setStaticObjectField(buildClass, "TAGS", "release-keys")
             XposedHelpers.setStaticObjectField(buildClass, "TYPE", "user")
         }
     }
 
-    // Helper per convertire la stringa SHA-256 in Byte Array per la classe Signature
     private fun hexStringToByteArray(s: String): ByteArray {
         val len = s.length
         val data = ByteArray(len / 2)
