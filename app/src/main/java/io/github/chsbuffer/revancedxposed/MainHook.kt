@@ -19,6 +19,7 @@ import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.setupIntegratedLogin
+import io.github.chsbuffer.revancedxposed.spotify.misc.login.StealthMode
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var startupParam: StartupParam
@@ -79,6 +80,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         inContext(lpparam) { app ->
             this.app = app
+            StealthMode(lpparam.classLoader)
             setupIntegratedLogin(lpparam.classLoader)
 
             // Carichiamo le preferenze una volta sola

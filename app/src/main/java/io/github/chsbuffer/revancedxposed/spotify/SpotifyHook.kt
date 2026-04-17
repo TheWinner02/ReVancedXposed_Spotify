@@ -64,7 +64,7 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
             )
 
         }.onFailure {
-            XposedBridge.log("G error -> ${it.message}")
+            XposedBridge.log("NHB error -> ${it.message}")
         }
     }
 }
