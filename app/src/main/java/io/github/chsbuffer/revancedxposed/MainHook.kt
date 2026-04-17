@@ -18,6 +18,7 @@ import io.github.chsbuffer.revancedxposed.spotify.RoundyUIHook
 import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
+import io.github.chsbuffer.revancedxposed.spotify.misc.login.Spoof
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.setupIntegratedLogin
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.StealthMode
 
@@ -36,6 +37,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return targetPackageName == packageName
     }
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
+        Spoof.applyAll(lpparam.classLoader)
         StealthMode(lpparam.classLoader)
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
