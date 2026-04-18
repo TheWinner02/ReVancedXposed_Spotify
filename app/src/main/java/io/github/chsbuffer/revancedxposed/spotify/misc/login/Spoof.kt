@@ -2,6 +2,7 @@ package io.github.chsbuffer.revancedxposed.spotify.misc.login
 
 import android.content.pm.PackageInfo
 import android.content.pm.Signature
+import android.os.Build
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedBridge
@@ -12,9 +13,15 @@ object Spoof {
 
     private const val SPOTIFY_SHA = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
 
+    // Costanti aggiornate dai sorgenti ReVanced
+    private const val RE_CLIENT_VERSION = "iphone-9.0.58.558.g200011c"
+    private const val RE_HARDWARE = "iPhone16,1"
+    private const val RE_SYSTEM = "17.7.2"
+    private const val RE_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
+
     fun apply(classLoader: ClassLoader, apkPath: String) {
 
-        // 1. SPOOF DELLA FIRMA (Livello OS)
+        // 1. SPOOF DELLA FIRMA (Invariato, fondamentale per evitare il ban)
         runCatching {
             val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
             XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
@@ -30,27 +37,40 @@ object Spoof {
             XposedBridge.log("SPOOF: Firma bypassata.")
         }
 
-        // 2. SPOOF USER-AGENT (iOS) - Metodo Diretto
-        // Molti controlli 14gg passano dall'header HTTP. Hookiamo la classe di configurazione.
+        // 2. SPOOF DI SISTEMA (BUILD) - La "Rete di sicurezza"
+        // Questo hooka le proprietà che i metodi offuscati di Spotify vanno a leggere
         runCatching {
-            val configClass = XposedHelpers.findClass("com.spotify.connectivity.ApplicationScopeConfiguration", classLoader)
-            XposedHelpers.findAndHookMethod(configClass, "setDefaultHTTPUserAgent", String::class.java, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    param.args[0] = "Spotify/8.9.10 iOS/17.4.1 (iPhone14,5)"
-                    XposedBridge.log("SPOOF: User-Agent impostato su iOS")
-                }
-            })
+            XposedHelpers.setStaticObjectField(Build::class.java, "MODEL", RE_HARDWARE)
+            XposedHelpers.setStaticObjectField(Build::class.java, "MANUFACTURER", "Apple")
+            XposedHelpers.setStaticObjectField(Build::class.java, "BRAND", "apple")
+            XposedHelpers.setStaticObjectField(Build::class.java, "DEVICE", RE_HARDWARE)
+            XposedHelpers.setStaticObjectField(Build.VERSION::class.java, "RELEASE", RE_SYSTEM)
+            XposedBridge.log("SPOOF: Proprietà Build.MODEL impostate su iOS ($RE_HARDWARE)")
         }
 
-        // 3. LOGICHE DEXKIT (Integrità e Metodi Interni)
+        // 3. SPOOF USER-AGENT (Header HTTP)
+        runCatching {
+            val configClass = XposedHelpers.findClassIfExists("com.spotify.connectivity.ApplicationScopeConfiguration", classLoader)
+            if (configClass != null) {
+                XposedHelpers.findAndHookMethod(configClass, "setDefaultHTTPUserAgent", String::class.java, object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        param.args[0] = RE_USER_AGENT
+                        XposedBridge.log("SPOOF: User-Agent impostato -> $RE_USER_AGENT")
+                    }
+                })
+            }
+        }
+
+        // 4. LOGICHE DEXKIT (Integrità e Metodi Interni)
         runCatching {
             System.loadLibrary("dexkit")
 
             DexKitBridge.create(apkPath).use { bridge ->
+                // Carica tutti i dex (utile per il multi-dex di Spotify)
                 XposedBridge.log("SPOOF: Inizio scansione DexKit...")
 
                 // --- BYPASS INTEGRITÀ ---
-                // Usa la nuova ricerca "invokeMethods" di Fingerprints.kt
+                // Dai tuoi log, questo è l'unico che trovava (metodi q, e, r)
                 val integrityMethods = Fingerprints.findIntegrityCheck(bridge)
                 integrityMethods.forEach { methodData ->
                     val method = methodData.getMethodInstance(classLoader)
@@ -66,19 +86,19 @@ object Spoof {
                         val method = methodData.getMethodInstance(classLoader)
 
                         val fakeValue = when(methodName) {
-                            "getClientVersion" -> "8.9.10"
-                            "getSystemVersion" -> "iOS 17.4.1"
-                            "getHardwareMachine" -> "iPhone14,5"
+                            "getClientVersion" -> RE_CLIENT_VERSION
+                            "getSystemVersion" -> RE_SYSTEM
+                            "getHardwareMachine" -> RE_HARDWARE
                             else -> ""
                         }
 
                         XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(fakeValue))
-                        XposedBridge.log("SPOOF: Metodo ${method.name} patchato -> $fakeValue")
+                        XposedBridge.log("SPOOF: Metodo offuscato ${method.name} ($methodName) patchato -> $fakeValue")
                     }
                 }
             }
         }.onFailure {
-            XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${it.message}")
+            XposedBridge.log("SPOOF ERROR: DexKit fallito o libreria non trovata -> ${it.message}")
         }
     }
 
