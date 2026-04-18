@@ -60,15 +60,19 @@ fun setupIntegratedLogin(classLoader: ClassLoader) {
 
                     XposedBridge.log("$TAG: Token rilevato! Forzo il salto della LoginActivity...")
 
-                    // Cerchiamo l'intent di avvio dell'app (MainActivity)
-                    val launchIntent = activity.packageManager.getLaunchIntentForPackage(activity.packageName)
-                    if (launchIntent != null) {
-                        launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                        activity.startActivity(launchIntent)
-                        activity.finish() // Chiude la LoginActivity
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        runCatching {
+                            // Cerchiamo l'intent di avvio dell'app (MainActivity)
+                            val launchIntent = activity.packageManager.getLaunchIntentForPackage(activity.packageName)
+                            if (launchIntent != null) {
+                                launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                                activity.startActivity(launchIntent)
+                                activity.finish() // Chiude la LoginActivity
+                            }
+                        }
+                    }, 1000)
                     }
-                }
             }
             // Se NON abbiamo il token e siamo in una schermata di login, mostriamo l'overlay
             else if (className.contains("LoginActivity", ignoreCase = true) ||
