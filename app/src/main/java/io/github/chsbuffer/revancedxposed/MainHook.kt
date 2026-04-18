@@ -39,6 +39,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
         Spoof.apply(lpparam.classLoader, lpparam.appInfo.sourceDir)
         StealthMode(lpparam.classLoader)
+        NetworkTracer(lpparam.classLoader)
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
@@ -133,6 +134,38 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 XposedBridge.log("Mod Roundy fallita: ${e.message}")
             }
             
+        }
+    }
+
+    private fun NetworkTracer(classLoader: ClassLoader) {
+        val TAG = "NETWORK-TRACE"
+        runCatching {
+            val builderClass = XposedHelpers.findClassIfExists("okhttp3.Request\$Builder", classLoader)
+            if (builderClass != null) {
+                XposedBridge.hookAllMethods(builderClass, "build", object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val request = param.result ?: return
+                        val url = XposedHelpers.callMethod(request, "url").toString()
+
+                        // Tracciamo le chiamate che definiscono l'identità e la sessione
+                        if (url.contains("spotify.com") || url.contains("api-partner") || url.contains("bootstrap")) {
+                            val method = XposedHelpers.callMethod(request, "method") as String
+                            val headers = XposedHelpers.callMethod(request, "headers").toString()
+
+                            XposedBridge.log("""
+                                |>>>> $TAG >>>>
+                                |METODO: $method
+                                |URL: $url
+                                |HEADERS:
+                                |$headers
+                                |<<<<<<<<<<<<<<<<<<<<<<<<<<
+                            """.trimMargin())
+                        }
+                    }
+                })
+            }
+        }.onFailure {
+            XposedBridge.log("SP-NETWORK-TRACE: Errore inizializzazione Tracer: ${it.message}")
         }
     }
 
