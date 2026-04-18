@@ -46,17 +46,28 @@ fun setupIntegratedLogin(classLoader: ClassLoader) {
     XposedHelpers.findAndHookMethod(Activity::class.java, "onCreate", Bundle::class.java, object : XC_MethodHook() {
         override fun afterHookedMethod(param: MethodHookParam) {
             val activity = param.thisObject as Activity
-            val token = AuthPrefs.getSavedToken(activity)
+            val context = activity.applicationContext
+            val token = AuthPrefs.getSavedToken(context)
             val className = activity.javaClass.name
 
-            // Se abbiamo il token, iniettiamolo nel CookieManager (per i componenti Web di Spotify)
             if (token != null) {
+                // Iniezione nel CookieManager (per i componenti Web interni)
                 injectCookieDynamically(token)
 
-                // Se siamo ancora nella LoginActivity nonostante abbiamo il token,
-                // probabilmente serve un restart o un'azione manuale
-                if (className.contains("LoginActivity", ignoreCase = true)) {
-                    XposedBridge.log("$TAG: Token presente, ma siamo in LoginActivity. L'app dovrebbe aggiornarsi...")
+                // FORZA IL SALTO SE SIAMO SUL LOGIN
+                if (className.contains("LoginActivity", ignoreCase = true) ||
+                    className.contains("OnboardingActivity", ignoreCase = true)) {
+
+                    XposedBridge.log("$TAG: Token rilevato! Forzo il salto della LoginActivity...")
+
+                    // Cerchiamo l'intent di avvio dell'app (MainActivity)
+                    val launchIntent = activity.packageManager.getLaunchIntentForPackage(activity.packageName)
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        activity.startActivity(launchIntent)
+                        activity.finish() // Chiude la LoginActivity
+                    }
                 }
             }
             // Se NON abbiamo il token e siamo in una schermata di login, mostriamo l'overlay
