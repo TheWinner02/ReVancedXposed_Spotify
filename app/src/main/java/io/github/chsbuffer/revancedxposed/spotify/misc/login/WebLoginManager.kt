@@ -30,7 +30,7 @@ object WebLoginManager {
                 domStorageEnabled = true
                 setSupportMultipleWindows(true)
                 // Usiamo un User-Agent ancora più recente per evitare sospetti
-                userAgentString = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_7_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+                userAgentString = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
             }
         }
 
@@ -71,8 +71,7 @@ object WebLoginManager {
 
                         // TRUCCO PRO: Diamo un piccolo delay per permettere il salvataggio
                         webView.postDelayed({
-                            activity.finishAffinity()
-                            // Opzionale: System.exit(0) se vuoi un restart brutale ma pulito
+                            android.os.Process.killProcess(android.os.Process.myPid())
                         }, 500)
                     }
                 }

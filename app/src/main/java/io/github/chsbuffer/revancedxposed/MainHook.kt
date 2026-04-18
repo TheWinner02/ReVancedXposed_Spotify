@@ -39,14 +39,15 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return targetPackageName == packageName
     }
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
+        StealthMode(lpparam.classLoader)
+
         // Forza le proprietà di sistema a livello Java
         System.setProperty("os.name", "iOS")
         System.setProperty("os.version", "17.7.2")
         System.setProperty("http.agent", "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)")
 
         Spoof.apply(lpparam.classLoader, lpparam.appInfo.sourceDir)
-        StealthMode(lpparam.classLoader)
-        NetworkTracer(lpparam.classLoader, lpparam.appInfo.sourceDir)
+
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
@@ -141,50 +142,6 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 XposedBridge.log("Mod Roundy fallita: ${e.message}")
             }
             
-        }
-    }
-
-    private fun NetworkTracer(classLoader: ClassLoader, apkPath: String) {
-        val TAG = "NETWORK-TRACE"
-
-        thread {
-            try {
-                System.loadLibrary("dexkit")
-                DexKitBridge.create(apkPath).use { bridge ->
-                    // Cerchiamo il metodo 'header(String, String)' di OkHttp
-                    // cercando chi usa la stringa "User-Agent"
-                    val result = bridge.findMethod {
-                        matcher {
-                            // Cerchiamo i metodi che si chiamano "header"
-                            name = "header"
-                            // Che accettano due stringhe come parametri
-                            paramTypes("java.lang.String", "java.lang.String")
-                        }
-                    }.singleOrNull()
-
-                    result?.let { methodData ->
-                        val method = methodData.getMethodInstance(classLoader)
-                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
-                            override fun beforeHookedMethod(param: MethodHookParam) {
-                                val name = param.args[0] as String
-                                val value = param.args[1] as String
-
-                                if (name.equals("User-Agent", ignoreCase = true)) {
-                                    XposedBridge.log("$TAG: Rilevato tentativo di impostare UA -> $value")
-                                    // Qui possiamo forzare iOS se vediamo che è Android
-                                    if (value.contains("Android")) {
-                                        param.args[1] = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
-                                        XposedBridge.log("$TAG: UA Android forzato a iOS!")
-                                    }
-                                }
-                            }
-                        })
-                        XposedBridge.log("$TAG: Hook dinamico su OkHttp (offuscato) completato.")
-                    }
-                }
-            } catch (e: Exception) {
-                XposedBridge.log("$TAG: Errore DexKit: ${e.message}")
-            }
         }
     }
 

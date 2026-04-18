@@ -34,7 +34,7 @@ object Fingerprints {
                 when (methodName) {
                     "getClientVersion" -> strings("9.")
                     "getSystemVersion" -> strings("17.")
-                    "getHardwareMachine" -> strings("iPhone")
+                    "getHardwareMachine" -> strings("iPh")
                 }
             }
         }

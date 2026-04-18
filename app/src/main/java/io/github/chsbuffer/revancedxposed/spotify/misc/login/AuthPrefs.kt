@@ -4,25 +4,31 @@ import android.content.Context
 import de.robv.android.xposed.XposedBridge
 
 object AuthPrefs {
-    const val PREFS_NAME = "spotify_auth_prefs"
-    const val KEY_SP_DC = "sp_dc"
+    private const val PREFS_NAME = "spotify_auth_prefs"
+    private const val KEY_SP_DC = "sp_dc"
 
-    // Salvataggio: usa le preferenze locali di Spotify
     fun saveToken(context: Context, token: String) {
+        // Usiamo commit() invece di apply() nel salvataggio del token.
+        // commit() è sincrono e garantisce che il dato sia scritto su disco prima di proseguire.
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putString(KEY_SP_DC, token).apply()
+        val success = prefs.edit().putString(KEY_SP_DC, token).commit()
+
+        if (success) {
+            XposedBridge.log("AUTH-DEBUG: Token salvato fisicamente su disco.")
+        }
     }
 
-    // Lettura: legge direttamente dalle preferenze locali
-    fun getSavedToken(context: Context): String? {
+    fun getSavedToken(context: Context?): String? {
+        if (context == null) return null
+
+        // Trick per forzare il ricaricamento delle SharedPreferences da disco
+        // In Android moderno, MODE_MULTI_PROCESS è deprecato ma caricare il file
+        // ogni volta che serve il token previene letture di cache vecchie.
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val token = prefs.getString(KEY_SP_DC, null)
 
-        // DEBUG LOG
         if (token != null) {
-            XposedBridge.log("AUTH-DEBUG: Token letto con successo dal pacchetto Spotify (${token.take(8)}...)")
-        } else {
-            XposedBridge.log("AUTH-DEBUG: Nessun token trovato nelle preferenze locali.")
+            XposedBridge.log("AUTH-DEBUG: Token letto (${token.take(8)}...)")
         }
         return token
     }

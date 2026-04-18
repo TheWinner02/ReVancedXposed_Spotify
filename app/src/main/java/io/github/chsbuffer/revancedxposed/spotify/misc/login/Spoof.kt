@@ -62,58 +62,86 @@ object Spoof {
             }
         }
 
-        // 4. LOGICHE DEXKIT (Spostate in Thread per stabilità)
+        // 4. LOGICHE DEXKIT
         kotlin.concurrent.thread {
             runCatching {
                 System.loadLibrary("dexkit")
-                XposedBridge.log("SPOOF: Inizio scansione DexKit in thread separato...")
+                XposedBridge.log("SPOOF: Inizio scansione DexKit...")
 
                 DexKitBridge.create(apkPath).use { bridge ->
 
-                    // --- TEST: Vediamo se DexKit trova almeno una stringa base ---
-                    val testString = bridge.findMethod {
+                    // --- TEST BASE ---
+                    val testMethod = bridge.findMethod {
                         matcher { strings("get_main_account") }
-                    }.singleOrNull()
-                    XposedBridge.log("SPOOF-DEBUG: Test ricerca stringa -> ${if (testString != null) "SUCCESSO" else "FALLIMENTO"}")
+                    }.firstOrNull()
+
+                    if (testMethod != null) {
+                        XposedBridge.log("SPOOF-DEBUG: DexKit operativo.")
+                    }
+
+                    // --- EX NETWORK-TRACER (Hook OkHttp dinamico) ---
+                    // Cerchiamo il metodo header(String, String) che restituisce il Builder
+                    val headerMethod = bridge.findMethod {
+                        matcher {
+                            name = "header"
+                            paramTypes("java.lang.String", "java.lang.String")
+                            // Solitamente i metodi builder restituiscono la classe stessa (offuscata)
+                            // Non mettiamo il returnType specifico se temiamo sia troppo offuscato,
+                            // la combinazione nome + parametri è già molto solida.
+                        }
+                    }.firstOrNull()
+
+                    headerMethod?.let { methodData ->
+                        runCatching {
+                            val method = methodData.getMethodInstance(classLoader)
+                            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                                override fun beforeHookedMethod(param: MethodHookParam) {
+                                    val name = param.args[0] as? String ?: return
+                                    if (name.equals("User-Agent", ignoreCase = true)) {
+                                        val value = param.args[1] as? String ?: ""
+                                        if (value.contains("Android")) {
+                                            param.args[1] = RE_USER_AGENT
+                                            // Logghiamo solo una volta per non intasare il logcat
+                                        }
+                                    }
+                                }
+                            })
+                            XposedBridge.log("SPOOF: Hook dinamico OkHttp (Header) completato.")
+                        }
+                    }
 
                     // --- BYPASS INTEGRITÀ ---
                     val integrityMethods = Fingerprints.findIntegrityCheck(bridge)
-                    if (integrityMethods.isEmpty()) XposedBridge.log("SPOOF-DEBUG: Nessun metodo integrità trovato!")
-
                     integrityMethods.forEach { methodData ->
-                        val method = methodData.getMethodInstance(classLoader)
-                        XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(false))
-                        XposedBridge.log("SPOOF: Integrità disabilitata su -> ${method.name}")
+                        runCatching {
+                            val method = methodData.getMethodInstance(classLoader)
+                            XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(false))
+                            XposedBridge.log("SPOOF: Integrità bypassata su -> ${method.name}")
+                        }
                     }
 
-                    // --- SPOOF METODI CLIENT ---
+                    // --- SPOOF METODI CLIENT (Version, System, Hardware) ---
                     val targetMethods = listOf("getClientVersion", "getSystemVersion", "getHardwareMachine")
                     targetMethods.forEach { methodName ->
                         val methods = Fingerprints.findClientDataMethods(bridge, methodName)
 
-                        if (methods.isEmpty()) {
-                            XposedBridge.log("SPOOF-DEBUG: Fingerprint FALLITO per $methodName")
-                        }
-
                         methods.forEach { methodData ->
-                            // Trasforma MethodData in java.lang.reflect.Method
-                            val method = methodData.getMethodInstance(classLoader)
-
-                            val fakeValue = when(methodName) {
-                                "getClientVersion" -> RE_CLIENT_VERSION
-                                "getSystemVersion" -> RE_SYSTEM
-                                "getHardwareMachine" -> RE_HARDWARE
-                                else -> ""
+                            runCatching {
+                                val method = methodData.getMethodInstance(classLoader)
+                                val fakeValue = when(methodName) {
+                                    "getClientVersion" -> RE_CLIENT_VERSION
+                                    "getSystemVersion" -> RE_SYSTEM
+                                    "getHardwareMachine" -> RE_HARDWARE
+                                    else -> ""
+                                }
+                                XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(fakeValue))
+                                XposedBridge.log("SPOOF: Patchato ${method.name} ($methodName) -> $fakeValue")
                             }
-
-                            // Ora passiamo l'oggetto Method a Xposed
-                            XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(fakeValue))
-                            XposedBridge.log("SPOOF: Patchato ${method.name} per $methodName -> $fakeValue")
                         }
                     }
                 }
             }.onFailure {
-                XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${it.message}")
+                XposedBridge.log("SPOOF ERROR: DexKit crash -> ${it.message}")
             }
         }
     }
