@@ -73,7 +73,7 @@ object Spoof {
                     // --- TEST: Vediamo se DexKit trova almeno una stringa base ---
                     val testString = bridge.findMethod {
                         matcher { strings("get_main_account") }
-                    }.firstOrNull()
+                    }.singleOrNull()
                     XposedBridge.log("SPOOF-DEBUG: Test ricerca stringa -> ${if (testString != null) "SUCCESSO" else "FALLIMENTO"}")
 
                     // --- BYPASS INTEGRITÀ ---
@@ -96,15 +96,19 @@ object Spoof {
                         }
 
                         methods.forEach { methodData ->
+                            // Trasforma MethodData in java.lang.reflect.Method
                             val method = methodData.getMethodInstance(classLoader)
+
                             val fakeValue = when(methodName) {
                                 "getClientVersion" -> RE_CLIENT_VERSION
                                 "getSystemVersion" -> RE_SYSTEM
                                 "getHardwareMachine" -> RE_HARDWARE
                                 else -> ""
                             }
+
+                            // Ora passiamo l'oggetto Method a Xposed
                             XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(fakeValue))
-                            XposedBridge.log("SPOOF: Metodo offuscato ${method.name} ($methodName) patchato -> $fakeValue")
+                            XposedBridge.log("SPOOF: Patchato ${method.name} per $methodName -> $fakeValue")
                         }
                     }
                 }

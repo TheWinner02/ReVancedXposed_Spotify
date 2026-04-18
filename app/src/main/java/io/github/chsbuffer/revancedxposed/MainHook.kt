@@ -39,6 +39,11 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return targetPackageName == packageName
     }
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
+        // Forza le proprietà di sistema a livello Java
+        System.setProperty("os.name", "iOS")
+        System.setProperty("os.version", "17.7.2")
+        System.setProperty("http.agent", "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)")
+
         Spoof.apply(lpparam.classLoader, lpparam.appInfo.sourceDir)
         StealthMode(lpparam.classLoader)
         NetworkTracer(lpparam.classLoader, lpparam.appInfo.sourceDir)
