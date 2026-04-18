@@ -7,50 +7,43 @@ object Spoof {
 
     fun apply(classLoader: ClassLoader) {
 
-        // 1. SPOOF USER-AGENT (Copiato dalla patch: Spotify/9.0.58 iOS/17.7.2)
+        // 1. KILL INTEGRITY VERIFICATION (Il "colpevole" del log)
+        // Questo hook blocca il metodo che scansiona l'app in cerca di oPatch/Xposed
         runCatching {
-            val userAgentClass = XposedHelpers.findClass("com.spotify.cosmos.shared.CosmosUserAgent", classLoader)
-            XposedHelpers.findAndHookMethod(userAgentClass, "get", object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    param.result = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
-                }
-            })
-        }
-
-        // 2. SPOOF CLIENT ID (Copiato dalla patch: il ClientID ufficiale iOS)
-        runCatching {
-            val authConfigClass = XposedHelpers.findClass("com.spotify.auth.AuthConfig", classLoader)
-            XposedHelpers.findAndHookMethod(authConfigClass, "getClientId", object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    param.result = "58bd3c95768941ea9eb4350aaa033eb3"
-                }
-            })
-        }
-
-        // 3. BYPASS INTEGRITY (Copiato dalla patch: returnEarly false)
-        runCatching {
-            // Cerchiamo la classe di verifica integrità (il nome cambia, ma cerchiamo il metodo)
-            val integrityClass = XposedHelpers.findClass("com.spotify.preload.IntegrityVerification", classLoader)
-            XposedHelpers.findAndHookMethod(integrityClass, "runVerification", object : XC_MethodHook() {
+            val integrityClass = XposedHelpers.findClass("com.spotify.puffin.core.integration.NativeIntegrityVerification", classLoader)
+            XposedHelpers.findAndHookMethod(integrityClass, "isIntegrated", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    param.result = false // Blocca la verifica sul nascere
+                    param.result = true // Diciamo all'app che tutto è a posto
                 }
             })
         }
 
-        // 4. SPOOF VERSION PROPERTIES (iOS Identity)
+        // 2. SPOOF IOS IDENTITY (Come visto nella patch ReVanced)
+        // Spotify si fida di più dei client iPhone, riducendo i controlli ReCaptcha
         runCatching {
             val propertiesClass = XposedHelpers.findClass("com.spotify.base.java.properties.InternalProperties", classLoader)
             XposedHelpers.findAndHookMethod(propertiesClass, "getProperty", String::class.java, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     when (param.args[0] as String) {
                         "client_version" -> param.result = "iphone-9.0.58.558.g200011c"
-                        "os_version" -> param.result = "17.7.2"
-                        "hardware_machine" -> param.result = "iPhone16,1"
                         "platform" -> param.result = "ios"
+                        "os_version" -> param.result = "17.7.2"
                     }
                 }
             })
+        }
+
+        // 3. BYPASS SSL PINNING (Per correggere l'errore Conscrypt nel log)
+        runCatching {
+            val trustManagerClass = XposedHelpers.findClass("com.android.org.conscrypt.TrustManagerImpl", classLoader)
+            XposedHelpers.findAndHookMethod(trustManagerClass, "checkTrustedRecursive",
+                Array<java.security.cert.X509Certificate>::class.java, String::class.java,
+                Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType,
+                Boolean::class.javaPrimitiveType, List::class.java, object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        param.result = emptyList<java.security.cert.X509Certificate>()
+                    }
+                })
         }
     }
 }
