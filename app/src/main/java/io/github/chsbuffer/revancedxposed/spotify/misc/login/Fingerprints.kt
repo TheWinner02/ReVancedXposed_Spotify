@@ -7,16 +7,16 @@ object Fingerprints {
 
     /**
      * CERCA IL BYPASS INTEGRITÀ
-     * Usa la sintassi esplicita per evitare errori di riferimento
      */
     fun findIntegrityCheck(bridge: DexKitBridge) = bridge.findMethod {
         val matcher = MethodMatcher.create()
             .returnType("boolean")
-            .invokeMethods(
-                MethodMatcher.create()
-                    .className("java.util.Calendar")
-                    .name("get")
-            )
+            .invokeMethods {
+                add {
+                    declaredClass("java.util.Calendar")
+                    name("get")
+                }
+            }
 
         matcher(matcher)
     }
