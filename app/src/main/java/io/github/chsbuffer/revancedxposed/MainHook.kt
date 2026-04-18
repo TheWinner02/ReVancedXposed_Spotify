@@ -37,7 +37,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return targetPackageName == packageName
     }
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
-        Spoof.apply(lpparam.classLoader, null)
+        Spoof.init(lpparam.classLoader)
         StealthMode(lpparam.classLoader)
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
@@ -84,13 +84,12 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         inContext(lpparam) { app ->
             this.app = app
             // Leggiamo il token che abbiamo salvato durante il Web Login
-            val loginPrefs = app.getSharedPreferences("IDS_TAG", 0) // Usa lo stesso nome file del WebLoginManager
-            val savedToken = loginPrefs.getString("sp_dc", null)
+            val savedToken = app.getSharedPreferences("IDS_TAG", 0).getString("sp_dc", null)
 
             // Ora applichiamo lo Spoof passando il token (se esiste)
             // Questo attiverà l'iniezione automatica al riavvio
             if (savedToken != null) {
-                Spoof.apply(lpparam.classLoader, savedToken)
+                Spoof.setToken(savedToken)
             }
             setupIntegratedLogin(lpparam.classLoader)
 

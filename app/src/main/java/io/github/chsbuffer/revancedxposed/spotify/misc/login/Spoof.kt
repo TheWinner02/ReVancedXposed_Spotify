@@ -1,96 +1,96 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.login
 
-import android.annotation.SuppressLint
 import android.content.pm.PackageInfo
 import android.content.pm.Signature
+import android.content.pm.SigningInfo
+import android.os.Build
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import java.security.cert.X509Certificate
 
 object Spoof {
 
-    private const val SPOTIFY_SHA256 = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
+    private const val SPOTIFY_SHA = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
+    private var sessionToken: String? = null
 
-    @SuppressLint("PackageManagerGetSignatures")
-    fun apply(classLoader: ClassLoader, capturedToken: String?) {
-        val targetPkg = "com.spotify.music"
+    // 1. Inizializza lo scudo (Firma, SSL, Native) - Da chiamare in handleLoadPackage
+    fun init(classLoader: ClassLoader) {
 
-        // --- PARTE 1: IDENTITÀ (Fondamentale per non essere bannati/bloccati) ---
+        // --- KILL NATIVE SECURITY ---
+        runCatching {
+            XposedHelpers.findAndHookMethod(Runtime::class.java, "loadLibrary0", Class::class.java, String::class.java, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val lib = param.args[1] as String
+                    if (listOf("orbit", "penguin", "puffin").any { lib.contains(it) }) {
+                        XposedBridge.log("SPOOF: Bloccata libreria nativa spia: $lib")
+                        param.result = null
+                    }
+                }
+            })
+        }
 
+        // --- SPOOF SIGNATURE & SIGNING INFO ---
         runCatching {
             val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
-
-            // Spoof della Firma (Replica SpoofSignaturePatch)
             XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    if (param.args[0] == targetPkg) {
-                        val flags = param.args[1] as Int
+                    val pkg = param.args[0] as String
+                    if (pkg.contains("spotify")) {
                         val info = param.result as? PackageInfo ?: return
-                        val fakeSig = Signature(hexStringToByteArray(SPOTIFY_SHA256))
-                        if (flags and 64 != 0) info.signatures = arrayOf(fakeSig)
+                        val fakeSig = Signature(hexToBytes(SPOTIFY_SHA))
+
+                        // Supporto vecchio (signatures)
+                        info.signatures = arrayOf(fakeSig)
+
+                        // Supporto nuovo (signingInfo) per Android 9+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            val signingInfo = XposedHelpers.newInstance(SigningInfo::class.java)
+                            XposedHelpers.setObjectField(info, "signingInfo", signingInfo)
+                        }
                         param.result = info
                     }
                 }
             })
         }
 
-        // Bypass SSL/Conscrypt (Evita l'errore "MOVE ioctl" dei log)
+        // --- BYPASS SSL PINNING (Flessibile) ---
         runCatching {
-            val trustManagerClass = XposedHelpers.findClass("com.android.org.conscrypt.TrustManagerImpl", classLoader)
-            XposedHelpers.findAndHookMethod(trustManagerClass, "checkTrustedRecursive",
-                Array<X509Certificate>::class.java, String::class.java,
-                Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType,
-                Boolean::class.javaPrimitiveType, ByteArray::class.java, ByteArray::class.java,
-                object : XC_MethodHook() {
+            val trustManager = XposedHelpers.findClass("com.android.org.conscrypt.TrustManagerImpl", classLoader)
+            // Cerchiamo il metodo checkTrustedRecursive indipendentemente dal numero di parametri
+            val methods = trustManager.declaredMethods
+            methods.filter { it.name == "checkTrustedRecursive" }.forEach { method ->
+                XposedBridge.hookMethod(method, object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         param.result = emptyList<X509Certificate>()
-                    }
-                })
-        }
-
-        // --- PARTE 2: SESSIONE & BYPASS 14 GIORNI (Quello che hai scritto tu) ---
-
-        // Iniezione Token nelle SharedPreferences
-        if (!capturedToken.isNullOrEmpty()) {
-            runCatching {
-                val prefsClass = XposedHelpers.findClass("android.app.SharedPreferencesImpl", classLoader)
-                XposedHelpers.findAndHookMethod(prefsClass, "getString", String::class.java, String::class.java, object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        val key = param.args[0] as String
-                        if (key == "sp_dc" || key == "login_token") {
-                            param.result = capturedToken
-                        }
                     }
                 })
             }
         }
 
-        // Forza Paese US e Stato LoggedIn
+        // --- PREFERENCES HOOK ---
         runCatching {
-            val userClass = XposedHelpers.findClass("com.spotify.user.UserAttributes", classLoader)
-            XposedHelpers.findAndHookMethod(userClass, "getCountry", object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) { param.result = "US" }
-            })
-        }
-
-        runCatching {
-            val sessionClass = XposedHelpers.findClass("com.spotify.authentication.login.LoginState", classLoader)
-            XposedHelpers.findAndHookMethod(sessionClass, "isLoggedIn", object : XC_MethodHook() {
+            val prefsClass = XposedHelpers.findClass("android.app.SharedPreferencesImpl", classLoader)
+            XposedHelpers.findAndHookMethod(prefsClass, "getString", String::class.java, String::class.java, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    if (!capturedToken.isNullOrEmpty()) param.result = true
+                    val key = param.args[0] as String
+                    when (key) {
+                        "sp_dc", "login_token" -> if (sessionToken != null) param.result = sessionToken
+                        "country", "last_registered_country" -> param.result = "US"
+                        "product_type", "type" -> param.result = "premium"
+                    }
                 }
             })
         }
     }
 
-    private fun hexStringToByteArray(hex: String): ByteArray {
-        val len = hex.length
-        val data = ByteArray(len / 2)
-        var i = 0
-        while (i < len) {
-            data[i / 2] = ((Character.digit(hex[i], 16) shl 4) + Character.digit(hex[i + 1], 16)).toByte()
-            i += 2
-        }
-        return data
+    // 2. Imposta il token quando disponibile - Da chiamare in inContext
+    fun setToken(token: String?) {
+        this.sessionToken = token
+        if (token != null) XposedBridge.log("SPOOF: Session Token iniettato nel motore.")
+    }
+
+    private fun hexToBytes(hex: String): ByteArray {
+        return hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
     }
 }
