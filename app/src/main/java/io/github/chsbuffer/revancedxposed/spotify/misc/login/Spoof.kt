@@ -10,15 +10,11 @@ import org.luckypray.dexkit.DexKitBridge
 
 object Spoof {
 
-    // Firma originale di Spotify per eludere i check di base
     private const val SPOTIFY_SHA = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
 
     fun apply(classLoader: ClassLoader, apkPath: String) {
 
-        // 1. SPOOF DELLA FIRMA (OS Level)
-        // Equivalente di SpoofSignaturePatchKt e SpoofPackageInfoPatchKt.
-        // Poiché siamo su Xposed, hookare l'API di sistema è infinitamente più stabile
-        // che cercare di patchare le 10+ chiamate interne di Spotify.
+        // 1. SPOOF DELLA FIRMA (Livello OS)
         runCatching {
             val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
             XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
@@ -31,49 +27,58 @@ object Spoof {
                     }
                 }
             })
-            XposedBridge.log("DEXKIT-SPOOF: Firma Spotify spoofata a livello OS.")
+            XposedBridge.log("SPOOF: Firma bypassata.")
         }
 
-        // 2. PATCH PROFONDE CON DEXKIT (Integrità & Spoof iOS)
+        // 2. SPOOF USER-AGENT (iOS) - Metodo Diretto
+        // Molti controlli 14gg passano dall'header HTTP. Hookiamo la classe di configurazione.
         runCatching {
-            System.loadLibrary("dexkit") // Carichiamo il motore C++
+            val configClass = XposedHelpers.findClass("com.spotify.connectivity.ApplicationScopeConfiguration", classLoader)
+            XposedHelpers.findAndHookMethod(configClass, "setDefaultHTTPUserAgent", String::class.java, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    param.args[0] = "Spotify/8.9.10 iOS/17.4.1 (iPhone14,5)"
+                    XposedBridge.log("SPOOF: User-Agent impostato su iOS")
+                }
+            })
+        }
+
+        // 3. LOGICHE DEXKIT (Integrità e Metodi Interni)
+        runCatching {
+            System.loadLibrary("dexkit")
 
             DexKitBridge.create(apkPath).use { bridge ->
-                XposedBridge.log("DEXKIT-SPOOF: Avvio scansione bytecode...")
+                XposedBridge.log("SPOOF: Inizio scansione DexKit...")
 
                 // --- BYPASS INTEGRITÀ ---
-                // Se questo fallisce, Spotify dà schermo nero o popup. Lo disabilitiamo (false).
+                // Usa la nuova ricerca "invokeMethods" di Fingerprints.kt
                 val integrityMethods = Fingerprints.findIntegrityCheck(bridge)
                 integrityMethods.forEach { methodData ->
                     val method = methodData.getMethodInstance(classLoader)
                     XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(false))
-                    XposedBridge.log("DEXKIT-SPOOF: Integrità bypassata su ${method.name}")
+                    XposedBridge.log("SPOOF: Integrità disabilitata su -> ${method.name}")
                 }
 
-                // --- SPOOF CLIENT (FORZATURA iOS) ---
-                // Sostituiamo i metodi interni per far credere ai server di essere un iPhone
+                // --- SPOOF METODI CLIENT ---
                 val targetMethods = listOf("getClientVersion", "getSystemVersion", "getHardwareMachine")
-
                 targetMethods.forEach { methodName ->
                     val methods = Fingerprints.findClientDataMethods(bridge, methodName)
                     methods.forEach { methodData ->
                         val method = methodData.getMethodInstance(classLoader)
 
                         val fakeValue = when(methodName) {
-                            "getClientVersion" -> "8.9.10" // Una versione supportata
-                            "getSystemVersion" -> "iOS 17.4.1" // SPOOF SISTEMA OPERATIVO
-                            "getHardwareMachine" -> "iPhone14,5" // SPOOF HARDWARE (iPhone 13)
+                            "getClientVersion" -> "8.9.10"
+                            "getSystemVersion" -> "iOS 17.4.1"
+                            "getHardwareMachine" -> "iPhone14,5"
                             else -> ""
                         }
 
                         XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(fakeValue))
-                        XposedBridge.log("DEXKIT-SPOOF: ${method.name} -> $fakeValue")
+                        XposedBridge.log("SPOOF: Metodo ${method.name} patchato -> $fakeValue")
                     }
                 }
             }
         }.onFailure {
-            XposedBridge.log("DEXKIT-SPOOF ERRORE: Scansione fallita -> ${it.message}")
-            it.printStackTrace()
+            XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${it.message}")
         }
     }
 

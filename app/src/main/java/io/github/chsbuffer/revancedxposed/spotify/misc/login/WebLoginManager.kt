@@ -40,33 +40,40 @@ object WebLoginManager {
 
         webView.webViewClient = object : WebViewClient() {
 
-            // TRUCCO: Invece di intercettare ogni singola risorsa (che è pesante),
-            // ci assicuriamo che la navigazione principale sia pulita.
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url.toString()
 
-                // Se rileviamo che Spotify sta cercando di forzare un'autenticazione nativa
-                // (che fallirebbe su oPatch), forziamo il caricamento web puro
-                return url.contains("spotify://") || url.contains("android-app://")
+                // Se tenta di aprire link esterni o deep link nativi, blocchiamo e restiamo nel web
+                if (url.startsWith("spotify:") || url.contains("play.google.com") || url.contains("android-app://")) {
+                    return true
+                }
+                return false
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                // Fondamentale: assicuriamoci che i cookie siano sincronizzati
+                CookieManager.getInstance().flush()
+
                 val cookies = CookieManager.getInstance().getCookie(url)
 
-                // Cerchiamo sp_dc (il token di sessione) o sp_key
-                if (cookies != null && (cookies.contains("sp_dc=") || cookies.contains("sp_key="))) {
+                if (cookies != null && cookies.contains("sp_dc=")) {
                     val spDc = cookies.split(";")
-                        .find { it.trim().startsWith("sp_dc=") }
+                        .map { it.trim() }
+                        .find { it.startsWith("sp_dc=") }
                         ?.substringAfter("=")
 
-                    if (spDc != null) {
-                        XposedBridge.log("SPOOF: Token catturato con successo!")
+                    if (!spDc.isNullOrBlank()) {
+                        XposedBridge.log("SPOOF: Token catturato con successo: ${spDc.take(10)}...")
                         AuthPrefs.saveToken(activity, spDc)
+
+                        // Chiudiamo il dialogo prima di killare l'app
                         dialog.dismiss()
 
-                        // Invece di recreate(), forziamo la chiusura e riapertura manuale
-                        // per pulire i processi nativi "congelati"
-                        activity.finishAffinity()
+                        // TRUCCO PRO: Diamo un piccolo delay per permettere il salvataggio
+                        webView.postDelayed({
+                            activity.finishAffinity()
+                            // Opzionale: System.exit(0) se vuoi un restart brutale ma pulito
+                        }, 500)
                     }
                 }
             }

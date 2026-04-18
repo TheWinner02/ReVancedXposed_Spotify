@@ -10,15 +10,7 @@ import de.robv.android.xposed.XposedHelpers
 fun setupIntegratedLogin(classLoader: ClassLoader) {
     val TAG = "TOKEN-INJECTOR"
 
-    // 1. BYPASS CRASH FLAGS (Correzione per l'errore nel tuo log)
-    runCatching {
-        val flagsClass = XposedHelpers.findClassIfExists("com.spotify.connectivity.flags.LoadedFlags", classLoader)
-        if (flagsClass == null) {
-            XposedBridge.log("$TAG: Classe LoadedFlags non trovata, applico bypass stabilità.")
-        }
-    }
-
-    // 2. HOOK OKHTTP - Iniezione Header (Priorità Massima)
+    // 1. HOOK OKHTTP - Iniezione Cookie (Il metodo più sicuro)
     runCatching {
         val builderClass = XposedHelpers.findClassIfExists("okhttp3.Request\$Builder", classLoader)
             ?: XposedHelpers.findClassIfExists("com.squareup.okhttp.Request\$Builder", classLoader)
@@ -26,34 +18,51 @@ fun setupIntegratedLogin(classLoader: ClassLoader) {
         if (builderClass != null) {
             XposedBridge.hookAllMethods(builderClass, "build", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    val token = AuthPrefs.getSavedToken(AndroidAppHelper.currentApplication()) ?: return
+                    // Recuperiamo il contesto in modo sicuro
+                    val context = AndroidAppHelper.currentApplication() ?: return
+                    val token = AuthPrefs.getSavedToken(context) ?: return
 
-                    // Iniezione multipla per bypassare i filtri geografici
-                    XposedHelpers.callMethod(param.thisObject, "header", "Cookie", "sp_dc=$token")
-                    XposedHelpers.callMethod(param.thisObject, "header", "Authorization", "Bearer $token")
-                    XposedHelpers.callMethod(param.thisObject, "header", "X-Spotify-Session", token)
+                    // Recuperiamo l'header Cookie esistente per non sovrascrivere altri dati utili
+                    val currentCookie = XposedHelpers.callMethod(param.thisObject, "header", "Cookie") as? String
+
+                    val newCookie = if (currentCookie.isNullOrEmpty()) {
+                        "sp_dc=$token"
+                    } else if (!currentCookie.contains("sp_dc=")) {
+                        "$currentCookie; sp_dc=$token"
+                    } else {
+                        null // sp_dc già presente, non facciamo nulla
+                    }
+
+                    if (newCookie != null) {
+                        XposedHelpers.callMethod(param.thisObject, "header", "Cookie", newCookie)
+                    }
                 }
             })
-            XposedBridge.log("$TAG: Hook OkHttp rinforzato.")
+            XposedBridge.log("$TAG: Hook OkHttp configurato (Iniezione Cookie).")
         }
     }
 
-    // 3. HOOK ACTIVITY - Forza iniezione Cookie all'apertura
+    // 2. HOOK ACTIVITY - Gestione Overlay e Re-init
     XposedHelpers.findAndHookMethod(Activity::class.java, "onCreate", Bundle::class.java, object : XC_MethodHook() {
         override fun afterHookedMethod(param: MethodHookParam) {
             val activity = param.thisObject as Activity
             val token = AuthPrefs.getSavedToken(activity)
             val className = activity.javaClass.name
 
+            // Se abbiamo il token, iniettiamolo nel CookieManager (per i componenti Web di Spotify)
             if (token != null) {
                 injectCookieDynamically(token)
 
-                // Se siamo bloccati nella LoginActivity ma abbiamo il token,
-                // proviamo a forzare l'app a ricaricare la sessione
+                // Se siamo ancora nella LoginActivity nonostante abbiamo il token,
+                // probabilmente serve un restart o un'azione manuale
                 if (className.contains("LoginActivity", ignoreCase = true)) {
-                    XposedBridge.log("$TAG: Forzo aggiornamento sessione nella LoginActivity...")
+                    XposedBridge.log("$TAG: Token presente, ma siamo in LoginActivity. L'app dovrebbe aggiornarsi...")
                 }
-            } else if (className.contains("login", ignoreCase = true)) {
+            }
+            // Se NON abbiamo il token e siamo in una schermata di login, mostriamo l'overlay
+            else if (className.contains("LoginActivity", ignoreCase = true) ||
+                className.contains("OnboardingActivity", ignoreCase = true)) {
+                XposedBridge.log("$TAG: Token assente, avvio WebLoginManager...")
                 WebLoginManager.showLoginOverlay(activity)
             }
         }
