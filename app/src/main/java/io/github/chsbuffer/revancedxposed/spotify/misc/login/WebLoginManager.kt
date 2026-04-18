@@ -30,7 +30,7 @@ object WebLoginManager {
                 domStorageEnabled = true
                 setSupportMultipleWindows(true)
                 // Usiamo un User-Agent ancora più recente per evitare sospetti
-                userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/UD1A.230805.019) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.6312.40 Mobile Safari/537.36"
+                userAgentString = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_7_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
             }
         }
 
