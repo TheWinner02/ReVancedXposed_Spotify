@@ -21,6 +21,8 @@ import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.Spoof
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.setupIntegratedLogin
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.StealthMode
+import kotlin.concurrent.thread
+import org.luckypray.dexkit.DexKitBridge
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var startupParam: StartupParam
@@ -39,7 +41,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
         Spoof.apply(lpparam.classLoader, lpparam.appInfo.sourceDir)
         StealthMode(lpparam.classLoader)
-        NetworkTracer(lpparam.classLoader)
+        NetworkTracer(lpparam.classLoader, lpparam.appInfo.sourceDir)
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
@@ -137,39 +139,46 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         }
     }
 
-    private fun NetworkTracer(classLoader: ClassLoader) {
+    private fun NetworkTracer(classLoader: ClassLoader, apkPath: String) {
         val TAG = "NETWORK-TRACE"
 
-        // Proviamo a hookare l'esecuzione vera e propria (RealCall)
-        runCatching {
-            val callClass = XposedHelpers.findClassIfExists("okhttp3.RealCall", classLoader)
-            if (callClass != null) {
-                XposedHelpers.findAndHookMethod(callClass, "execute", object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        val request = XposedHelpers.callMethod(param.thisObject, "request")
-                        val url = XposedHelpers.callMethod(request, "url").toString()
-                        XposedBridge.log("$TAG (Execute): $url")
-                    }
-                })
-            } else {
-                XposedBridge.log("$TAG: Classe RealCall non trovata, l'app potrebbe usare ProGuard.")
-            }
-        }
-
-        // Hook universale su qualunque cosa somigli a un Header
-        runCatching {
-            val builderClass = XposedHelpers.findClassIfExists("okhttp3.Request\$Builder", classLoader)
-            if (builderClass != null) {
-                // Hookiamo il metodo 'header' per vedere chi prova a scrivere lo User-Agent
-                XposedHelpers.findAndHookMethod(builderClass, "header", String::class.java, String::class.java, object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        val name = param.args[0] as String
-                        val value = param.args[1] as String
-                        if (name.contains("User-Agent", ignoreCase = true) || name.contains("Cookie", ignoreCase = true)) {
-                            XposedBridge.log("$TAG (Header Set) -> $name: $value")
+        thread {
+            try {
+                System.loadLibrary("dexkit")
+                DexKitBridge.create(apkPath).use { bridge ->
+                    // Cerchiamo il metodo 'header(String, String)' di OkHttp
+                    // cercando chi usa la stringa "User-Agent"
+                    val result = bridge.findMethod {
+                        matcher {
+                            // Cerchiamo i metodi che si chiamano "header"
+                            name = "header"
+                            // Che accettano due stringhe come parametri
+                            paramTypes("java.lang.String", "java.lang.String")
                         }
+                    }.singleOrNull()
+
+                    result?.let { methodData ->
+                        val method = methodData.getMethodInstance(classLoader)
+                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                            override fun beforeHookedMethod(param: MethodHookParam) {
+                                val name = param.args[0] as String
+                                val value = param.args[1] as String
+
+                                if (name.equals("User-Agent", ignoreCase = true)) {
+                                    XposedBridge.log("$TAG: Rilevato tentativo di impostare UA -> $value")
+                                    // Qui possiamo forzare iOS se vediamo che è Android
+                                    if (value.contains("Android")) {
+                                        param.args[1] = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
+                                        XposedBridge.log("$TAG: UA Android forzato a iOS!")
+                                    }
+                                }
+                            }
+                        })
+                        XposedBridge.log("$TAG: Hook dinamico su OkHttp (offuscato) completato.")
                     }
-                })
+                }
+            } catch (e: Exception) {
+                XposedBridge.log("$TAG: Errore DexKit: ${e.message}")
             }
         }
     }
