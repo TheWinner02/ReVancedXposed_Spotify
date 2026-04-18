@@ -7,6 +7,7 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import io.github.chsbuffer.revancedxposed.strings
 import org.luckypray.dexkit.DexKitBridge
 
 object Spoof {
@@ -61,44 +62,55 @@ object Spoof {
             }
         }
 
-        // 4. LOGICHE DEXKIT (Integrità e Metodi Interni)
-        runCatching {
-            System.loadLibrary("dexkit")
+        // 4. LOGICHE DEXKIT (Spostate in Thread per stabilità)
+        kotlin.concurrent.thread {
+            runCatching {
+                System.loadLibrary("dexkit")
+                XposedBridge.log("SPOOF: Inizio scansione DexKit in thread separato...")
 
-            DexKitBridge.create(apkPath).use { bridge ->
-                // Carica tutti i dex (utile per il multi-dex di Spotify)
-                XposedBridge.log("SPOOF: Inizio scansione DexKit...")
+                DexKitBridge.create(apkPath).use { bridge ->
 
-                // --- BYPASS INTEGRITÀ ---
-                // Dai tuoi log, questo è l'unico che trovava (metodi q, e, r)
-                val integrityMethods = Fingerprints.findIntegrityCheck(bridge)
-                integrityMethods.forEach { methodData ->
-                    val method = methodData.getMethodInstance(classLoader)
-                    XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(false))
-                    XposedBridge.log("SPOOF: Integrità disabilitata su -> ${method.name}")
-                }
+                    // --- TEST: Vediamo se DexKit trova almeno una stringa base ---
+                    val testString = bridge.findMethod {
+                        matcher { strings("get_main_account") }
+                    }.firstOrNull()
+                    XposedBridge.log("SPOOF-DEBUG: Test ricerca stringa -> ${if (testString != null) "SUCCESSO" else "FALLIMENTO"}")
 
-                // --- SPOOF METODI CLIENT ---
-                val targetMethods = listOf("getClientVersion", "getSystemVersion", "getHardwareMachine")
-                targetMethods.forEach { methodName ->
-                    val methods = Fingerprints.findClientDataMethods(bridge, methodName)
-                    methods.forEach { methodData ->
+                    // --- BYPASS INTEGRITÀ ---
+                    val integrityMethods = Fingerprints.findIntegrityCheck(bridge)
+                    if (integrityMethods.isEmpty()) XposedBridge.log("SPOOF-DEBUG: Nessun metodo integrità trovato!")
+
+                    integrityMethods.forEach { methodData ->
                         val method = methodData.getMethodInstance(classLoader)
+                        XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(false))
+                        XposedBridge.log("SPOOF: Integrità disabilitata su -> ${method.name}")
+                    }
 
-                        val fakeValue = when(methodName) {
-                            "getClientVersion" -> RE_CLIENT_VERSION
-                            "getSystemVersion" -> RE_SYSTEM
-                            "getHardwareMachine" -> RE_HARDWARE
-                            else -> ""
+                    // --- SPOOF METODI CLIENT ---
+                    val targetMethods = listOf("getClientVersion", "getSystemVersion", "getHardwareMachine")
+                    targetMethods.forEach { methodName ->
+                        val methods = Fingerprints.findClientDataMethods(bridge, methodName)
+
+                        if (methods.isEmpty()) {
+                            XposedBridge.log("SPOOF-DEBUG: Fingerprint FALLITO per $methodName")
                         }
 
-                        XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(fakeValue))
-                        XposedBridge.log("SPOOF: Metodo offuscato ${method.name} ($methodName) patchato -> $fakeValue")
+                        methods.forEach { methodData ->
+                            val method = methodData.getMethodInstance(classLoader)
+                            val fakeValue = when(methodName) {
+                                "getClientVersion" -> RE_CLIENT_VERSION
+                                "getSystemVersion" -> RE_SYSTEM
+                                "getHardwareMachine" -> RE_HARDWARE
+                                else -> ""
+                            }
+                            XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(fakeValue))
+                            XposedBridge.log("SPOOF: Metodo offuscato ${method.name} ($methodName) patchato -> $fakeValue")
+                        }
                     }
                 }
+            }.onFailure {
+                XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${it.message}")
             }
-        }.onFailure {
-            XposedBridge.log("SPOOF ERROR: DexKit fallito o libreria non trovata -> ${it.message}")
         }
     }
 
