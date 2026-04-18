@@ -139,33 +139,38 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
     private fun NetworkTracer(classLoader: ClassLoader) {
         val TAG = "NETWORK-TRACE"
+
+        // Proviamo a hookare l'esecuzione vera e propria (RealCall)
+        runCatching {
+            val callClass = XposedHelpers.findClassIfExists("okhttp3.RealCall", classLoader)
+            if (callClass != null) {
+                XposedHelpers.findAndHookMethod(callClass, "execute", object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val request = XposedHelpers.callMethod(param.thisObject, "request")
+                        val url = XposedHelpers.callMethod(request, "url").toString()
+                        XposedBridge.log("$TAG (Execute): $url")
+                    }
+                })
+            } else {
+                XposedBridge.log("$TAG: Classe RealCall non trovata, l'app potrebbe usare ProGuard.")
+            }
+        }
+
+        // Hook universale su qualunque cosa somigli a un Header
         runCatching {
             val builderClass = XposedHelpers.findClassIfExists("okhttp3.Request\$Builder", classLoader)
             if (builderClass != null) {
-                XposedBridge.hookAllMethods(builderClass, "build", object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        val request = param.result ?: return
-                        val url = XposedHelpers.callMethod(request, "url").toString()
-
-                        // Tracciamo le chiamate che definiscono l'identità e la sessione
-                        if (url.contains("spotify.com") || url.contains("api-partner") || url.contains("bootstrap")) {
-                            val method = XposedHelpers.callMethod(request, "method") as String
-                            val headers = XposedHelpers.callMethod(request, "headers").toString()
-
-                            XposedBridge.log("""
-                                |>>>> $TAG >>>>
-                                |METODO: $method
-                                |URL: $url
-                                |HEADERS:
-                                |$headers
-                                |<<<<<<<<<<<<<<<<<<<<<<<<<<
-                            """.trimMargin())
+                // Hookiamo il metodo 'header' per vedere chi prova a scrivere lo User-Agent
+                XposedHelpers.findAndHookMethod(builderClass, "header", String::class.java, String::class.java, object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val name = param.args[0] as String
+                        val value = param.args[1] as String
+                        if (name.contains("User-Agent", ignoreCase = true) || name.contains("Cookie", ignoreCase = true)) {
+                            XposedBridge.log("$TAG (Header Set) -> $name: $value")
                         }
                     }
                 })
             }
-        }.onFailure {
-            XposedBridge.log("SP-NETWORK-TRACE: Errore inizializzazione Tracer: ${it.message}")
         }
     }
 
