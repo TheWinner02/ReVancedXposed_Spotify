@@ -29,7 +29,7 @@ object Fingerprints {
 
             // Cerchiamo le stringhe che Spotify Android usa per identificare il sistema
             // Invece di usare i campi Build, cerchiamo chi maneggia queste versioni comuni
-            "getSystemVersion" -> "12" // Prova con "12", "13" o "14" (le versioni Android stock)
+            "getSystemVersion" -> "13" // Prova con "12", "13" o "14" (le versioni Android stock)
 
             // Spotify restituisce quasi sempre "unknown" o "google" se non riconosce l'hardware
             "getHardwareMachine" -> "unknown"
