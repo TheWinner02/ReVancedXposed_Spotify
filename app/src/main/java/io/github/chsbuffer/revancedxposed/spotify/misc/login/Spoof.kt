@@ -7,14 +7,11 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
-import io.github.chsbuffer.revancedxposed.strings
 import org.luckypray.dexkit.DexKitBridge
 
 object Spoof {
 
     private const val SPOTIFY_SHA = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
-
-    // Costanti aggiornate dai sorgenti ReVanced
     private const val RE_CLIENT_VERSION = "iphone-9.0.58.558.g200011c"
     private const val RE_HARDWARE = "iPhone16,1"
     private const val RE_SYSTEM = "17.7.2"
@@ -22,7 +19,7 @@ object Spoof {
 
     fun apply(classLoader: ClassLoader, apkPath: String) {
 
-        // 1. SPOOF DELLA FIRMA (Invariato, fondamentale per evitare il ban)
+        // 1. SPOOF DELLA FIRMA
         runCatching {
             val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
             XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
@@ -38,8 +35,7 @@ object Spoof {
             XposedBridge.log("SPOOF: Firma bypassata.")
         }
 
-        // 2. SPOOF DI SISTEMA (BUILD) - La "Rete di sicurezza"
-        // Questo hooka le proprietà che i metodi offuscati di Spotify vanno a leggere
+        // 2. SPOOF DI SISTEMA (BUILD)
         runCatching {
             XposedHelpers.setStaticObjectField(Build::class.java, "MODEL", RE_HARDWARE)
             XposedHelpers.setStaticObjectField(Build::class.java, "MANUFACTURER", "Apple")
@@ -49,23 +45,7 @@ object Spoof {
             XposedBridge.log("SPOOF: Proprietà Build.MODEL impostate su iOS ($RE_HARDWARE)")
         }
 
-        // 3. SPOOF USER-AGENT (Header HTTP)
-        runCatching {
-            val configClass = XposedHelpers.findClassIfExists("com.spotify.connectivity.ApplicationScopeConfiguration", classLoader)
-            if (configClass != null) {
-                XposedHelpers.findAndHookMethod(configClass, "setDefaultHTTPUserAgent", String::class.java, object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        param.args[0] = RE_USER_AGENT
-                        XposedBridge.log("SPOOF: User-Agent impostato -> $RE_USER_AGENT")
-                    }
-                })
-            } else {
-                // Se non lo trova, non crasha grazie a findClassIfExists, ma almeno lo sappiamo
-                XposedBridge.log("SPOOF-WARN: ApplicationScopeConfiguration non trovata, salto l'hook dello UA standard.")
-            }
-        }
-
-        // 4. LOGICHE DEXKIT
+        // 3. LOGICHE DEXKIT (Include User-Agent, OkHttp, Integrità e Versioni)
         kotlin.concurrent.thread {
             runCatching {
                 System.loadLibrary("dexkit")
@@ -73,24 +53,25 @@ object Spoof {
 
                 DexKitBridge.create(apkPath).use { bridge ->
 
-                    // --- TEST BASE ---
-                    val testMethod = bridge.findMethod {
-                        matcher { strings("get_main_account") }
-                    }.firstOrNull()
-
-                    if (testMethod != null) {
-                        XposedBridge.log("SPOOF-DEBUG: DexKit operativo.")
+                    // --- SPOOF USER-AGENT DINAMICO ---
+                    val uaMethodData = Fingerprints.findUserAgentSetter(bridge).firstOrNull()
+                    uaMethodData?.let { data ->
+                        runCatching {
+                            val method = data.getMethodInstance(classLoader)
+                            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                                override fun beforeHookedMethod(param: MethodHookParam) {
+                                    param.args[0] = RE_USER_AGENT
+                                }
+                            })
+                            XposedBridge.log("SPOOF: User-Agent forzato tramite DexKit Match!")
+                        }
                     }
 
-                    // --- EX NETWORK-TRACER (Hook OkHttp dinamico) ---
-                    // Cerchiamo il metodo header(String, String) che restituisce il Builder
+                    // --- HOOK OKHTTP DINAMICO ---
                     val headerMethod = bridge.findMethod {
                         matcher {
                             name = "header"
                             paramTypes("java.lang.String", "java.lang.String")
-                            // Solitamente i metodi builder restituiscono la classe stessa (offuscata)
-                            // Non mettiamo il returnType specifico se temiamo sia troppo offuscato,
-                            // la combinazione nome + parametri è già molto solida.
                         }
                     }.firstOrNull()
 
@@ -102,14 +83,11 @@ object Spoof {
                                     val name = param.args[0] as? String ?: return
                                     if (name.equals("User-Agent", ignoreCase = true)) {
                                         val value = param.args[1] as? String ?: ""
-                                        if (value.contains("Android")) {
-                                            param.args[1] = RE_USER_AGENT
-                                            // Logghiamo solo una volta per non intasare il logcat
-                                        }
+                                        if (value.contains("Android")) param.args[1] = RE_USER_AGENT
                                     }
                                 }
                             })
-                            XposedBridge.log("SPOOF: Hook dinamico OkHttp (Header) completato.")
+                            XposedBridge.log("SPOOF: Hook OkHttp (Header) completato.")
                         }
                     }
 
@@ -118,16 +96,15 @@ object Spoof {
                     integrityMethods.forEach { methodData ->
                         runCatching {
                             val method = methodData.getMethodInstance(classLoader)
-                            XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(false))
+                            XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(null)) // Restituisce void
                             XposedBridge.log("SPOOF: Integrità bypassata su -> ${method.name}")
                         }
                     }
 
-                    // --- SPOOF METODI CLIENT (Version, System, Hardware) ---
+                    // --- SPOOF METODI CLIENT ---
                     val targetMethods = listOf("getClientVersion", "getSystemVersion", "getHardwareMachine")
                     targetMethods.forEach { methodName ->
                         val methods = Fingerprints.findClientDataMethods(bridge, methodName)
-
                         methods.forEach { methodData ->
                             runCatching {
                                 val method = methodData.getMethodInstance(classLoader)

@@ -41,16 +41,11 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
         StealthMode(lpparam.classLoader)
 
-        // Forza le proprietà di sistema a livello Java
-        System.setProperty("os.name", "iOS")
-        System.setProperty("os.version", "17.7.2")
-        System.setProperty("http.agent", "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)")
-
-        Spoof.apply(lpparam.classLoader, lpparam.appInfo.sourceDir)
-
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
+
+        Spoof.apply(lpparam.classLoader, lpparam.appInfo.sourceDir)
 
         // --- NUOVO TRIGGER: LONG CLICK SU ICONA PROFILO ---
         XposedHelpers.findAndHookMethod(

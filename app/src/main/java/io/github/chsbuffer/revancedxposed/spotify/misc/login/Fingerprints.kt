@@ -6,12 +6,11 @@ import java.lang.reflect.Modifier
 
 object Fingerprints {
 
+    // IMPLEMENTAZIONE REALE REVANCED: Cerca il metodo void che usa Calendar.get
     fun findIntegrityCheck(bridge: DexKitBridge) = bridge.findMethod {
-        // searchPackages va fuori da matcher { }
         searchPackages("com.spotify")
-
         matcher {
-            returnType = "boolean"
+            returnType = "void" // <-- ReVanced usa V (void), non boolean!
             modifiers = Modifier.PUBLIC or Modifier.FINAL
             invokeMethods {
                 add {
@@ -22,35 +21,30 @@ object Fingerprints {
         }
     }
 
+    // CERCA I METODI DI SPOOF
     fun findClientDataMethods(bridge: DexKitBridge, methodName: String): List<MethodData> {
         return bridge.findMethod {
-            // searchPackages va fuori da matcher { }
             searchPackages("com.spotify")
-
             matcher {
                 returnType = "java.lang.String"
                 modifiers = Modifier.PUBLIC
-
-                // Per indicare "zero parametri" in DexKit si usa:
-                params { }
+                params { } // Getter senza argomenti
 
                 when (methodName) {
-                    "getClientVersion" -> {
-                        usingStrings("iphone-", "9.")
-                    }
-                    "getSystemVersion" -> {
-                        // Cerchiamo i metodi che usano le costanti di versione
-                        usingStrings("15", "16", "17")
-                    }
-                    "getHardwareMachine" -> {
-                        // Cerchiamo i metodi che contengono i nomi dei modelli Apple
-                        usingStrings("iPhone", "iPad")
-                    }
+                    "getClientVersion" -> usingStrings("iphone-", "9.")
+                    "getSystemVersion" -> usingStrings("15", "16", "17")
+                    "getHardwareMachine" -> usingStrings("iPhone", "iPad")
                 }
             }
-        }.filter {
-            // Filtro per nomi offuscati (solitamente 1 o 2 lettere)
-            it.methodName.length <= 3
+        }.filter { it.methodName.length <= 3 }
+    }
+
+    // CERCA LA CLASSE DELLO USER AGENT (Per evitare l'errore "non trovata")
+    fun findUserAgentSetter(bridge: DexKitBridge) = bridge.findMethod {
+        searchPackages("com.spotify")
+        matcher {
+            name = "setDefaultHTTPUserAgent"
+            paramTypes("java.lang.String")
         }
     }
 }

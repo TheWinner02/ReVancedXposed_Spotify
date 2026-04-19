@@ -8,14 +8,13 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 
-// Variabile di stato fuori dalla funzione per persistere nel processo
 private var isJumpingToMain = false
 
 fun setupIntegratedLogin(classLoader: ClassLoader) {
     val TAG = "TOKEN-INJECTOR"
     val RE_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
 
-    // 1. HOOK OKHTTP - Iniezione Cookie e User-Agent
+    // 1. HOOK OKHTTP
     runCatching {
         val builderClass = XposedHelpers.findClassIfExists("okhttp3.Request\$Builder", classLoader)
             ?: XposedHelpers.findClassIfExists("com.squareup.okhttp.Request\$Builder", classLoader)
@@ -39,7 +38,7 @@ fun setupIntegratedLogin(classLoader: ClassLoader) {
         }
     }
 
-    // DEBUG: Intercettazione errori di autenticazione dal server
+    // DEBUG SERVER RESPONSES
     runCatching {
         val responseClass = XposedHelpers.findClassIfExists("okhttp3.Response", classLoader)
         if (responseClass != null) {
@@ -47,14 +46,14 @@ fun setupIntegratedLogin(classLoader: ClassLoader) {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val code = param.result as Int
                     if (code == 401 || code == 403) {
-                        XposedBridge.log("$TAG: AUTH-ERROR! Il server ha risposto con $code. Token o Spoof non validi.")
+                        XposedBridge.log("$TAG: AUTH-ERROR! Il server ha risposto con $code.")
                     }
                 }
             })
         }
     }
 
-    // 2. HOOK ACTIVITY - Gestione salto con protezione Anti-Loop
+    // 2. HOOK ACTIVITY CON PROTEZIONE LOOP E DELAY
     XposedHelpers.findAndHookMethod(Activity::class.java, "onCreate", Bundle::class.java, object : XC_MethodHook() {
         override fun afterHookedMethod(param: MethodHookParam) {
             val activity = param.thisObject as Activity
@@ -70,28 +69,34 @@ fun setupIntegratedLogin(classLoader: ClassLoader) {
 
             if (isLoginScreen) {
                 if (token != null) {
-                    // PROTEZIONE: Se stiamo già saltando, non fare nulla
                     if (isJumpingToMain) return
 
-                    XposedBridge.log("$TAG: Token rilevato! Eseguo salto alla MainActivity...")
-                    isJumpingToMain = true // Blocca ulteriori tentativi
+                    XposedBridge.log("$TAG: Token rilevato! Attendo 2 secondi per la stabilizzazione di DexKit...")
+                    isJumpingToMain = true
 
-                    val launchIntent = activity.packageManager.getLaunchIntentForPackage(activity.packageName)
-                    launchIntent?.let {
-                        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                        activity.startActivity(it)
-                        activity.finish()
-                    }
+                    // IL RITARDO MAGICO CHE FERMA IL LOOP
+                    activity.window.decorView.postDelayed({
+                        try {
+                            XposedBridge.log("$TAG: Eseguo salto alla MainActivity...")
+                            val launchIntent = activity.packageManager.getLaunchIntentForPackage(activity.packageName)
+                            launchIntent?.let {
+                                it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                                activity.startActivity(it)
+                                activity.finish()
+                            }
+                        } catch (e: Exception) {
+                            isJumpingToMain = false
+                        }
+                    }, 2000)
 
-                    // Resettiamo il flag dopo un po' nel caso il salto fallisca
-                    activity.window.decorView.postDelayed({ isJumpingToMain = false }, 3000)
+                    // Reset di sicurezza dopo 5 secondi
+                    activity.window.decorView.postDelayed({ isJumpingToMain = false }, 5000)
 
                 } else {
                     XposedBridge.log("$TAG: Token assente, mostro WebLoginManager.")
                     WebLoginManager.showLoginOverlay(activity)
                 }
             } else if (className.contains("MainActivity", ignoreCase = true)) {
-                // Se siamo arrivati alla MainActivity, resettiamo il flag
                 isJumpingToMain = false
             }
         }
@@ -102,15 +107,12 @@ private fun injectCookieDynamically(token: String) {
     runCatching {
         val cm = android.webkit.CookieManager.getInstance()
         cm.setAcceptCookie(true)
-
-        // Domini aggiornati per coprire tutte le chiamate di autenticazione Spotify
         val domains = listOf(
             "spotify.com",
             ".spotify.com",
             "accounts.spotify.com",
             "api-partner.spotify.com"
         )
-
         domains.forEach { domain ->
             val cookieStr = "sp_dc=$token; Domain=$domain; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax"
             cm.setCookie("https://$domain", cookieStr)
