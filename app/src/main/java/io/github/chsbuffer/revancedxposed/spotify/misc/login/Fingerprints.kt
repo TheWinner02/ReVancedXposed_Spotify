@@ -47,4 +47,18 @@ object Fingerprints {
             paramTypes("java.lang.String")
         }
     }
+
+    // Aggiungi questo in Fingerprints.kt
+
+    fun findPlatformMethod(bridge: DexKitBridge): List<MethodData> {
+        return bridge.findMethod {
+            searchPackages("com.spotify")
+            matcher {
+                returnType = "java.lang.String"
+                params { }
+                // Nella versione stock, questo metodo contiene la stringa "android"
+                usingStrings("android")
+            }
+        }.filter { it.methodName.length <= 3 } // Di solito è un metodo offuscato corto
+    }
 }
