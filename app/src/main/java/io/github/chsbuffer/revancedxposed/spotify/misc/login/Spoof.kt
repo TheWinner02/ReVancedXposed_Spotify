@@ -123,6 +123,21 @@ object Spoof {
                             XposedBridge.log("SPOOF: Integrity check neutralizzato in ${method.declaringClass.name}.${method.name}")
                         }
                     }
+
+                    // --- BYPASS RESTRIZIONE GEOGRAFICA (14 GIORNI) ---
+                    bridge.findMethod {
+                        searchPackages("com.spotify", "p")
+                        matcher {
+                            returnType = "boolean"
+                            name = "isLoginAllowed" // Nome generico spesso usato nelle interfacce
+                        }
+                    }.forEach { methodData ->
+                        runCatching {
+                            val method = methodData.getMethodInstance(classLoader)
+                            XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(true))
+                            XposedBridge.log("SPOOF: Bypass restrizione geografica applicato")
+                        }
+                    }
                 }
             }.onFailure {
                 XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${it.message}")
