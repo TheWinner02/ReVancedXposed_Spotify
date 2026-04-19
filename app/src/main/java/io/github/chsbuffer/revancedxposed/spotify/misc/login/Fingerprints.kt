@@ -1,42 +1,56 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.login
 
-import io.github.chsbuffer.revancedxposed.strings
 import org.luckypray.dexkit.DexKitBridge
-import org.luckypray.dexkit.query.matchers.MethodMatcher
 import org.luckypray.dexkit.result.MethodData
+import java.lang.reflect.Modifier
 
 object Fingerprints {
 
-    /**
-     * CERCA IL BYPASS INTEGRITÀ
-     */
     fun findIntegrityCheck(bridge: DexKitBridge) = bridge.findMethod {
-        val matcher = MethodMatcher.create()
-            .returnType("boolean")
-            .invokeMethods {
+        // searchPackages va fuori da matcher { }
+        searchPackages("com.spotify")
+
+        matcher {
+            returnType = "boolean"
+            modifiers = Modifier.PUBLIC or Modifier.FINAL
+            invokeMethods {
                 add {
                     declaredClass("java.util.Calendar")
                     name("get")
                 }
             }
-
-        matcher(matcher)
+        }
     }
 
-    /**
-     * CERCA I METODI PER LO SPOOF
-     */
     fun findClientDataMethods(bridge: DexKitBridge, methodName: String): List<MethodData> {
         return bridge.findMethod {
+            // searchPackages va fuori da matcher { }
+            searchPackages("com.spotify")
+
             matcher {
                 returnType = "java.lang.String"
-                // Cerchiamo i metodi basandoci sulle stringhe che contengono
+                modifiers = Modifier.PUBLIC
+
+                // Per indicare "zero parametri" in DexKit si usa:
+                params { }
+
                 when (methodName) {
-                    "getClientVersion" -> strings("9.")
-                    "getSystemVersion" -> strings("17.")
-                    "getHardwareMachine" -> strings("iPh")
+                    "getClientVersion" -> {
+                        usingStrings("iphone-", "9.")
+                    }
+                    "getSystemVersion" -> {
+                        // Cerchiamo i metodi che usano le costanti di versione
+                        usingStrings("15", "16", "17")
+                    }
+                    "getHardwareMachine" -> {
+                        // Cerchiamo i metodi che contengono i nomi dei modelli Apple
+                        usingStrings("iPhone", "iPad")
+                    }
                 }
             }
+        }.filter {
+            // Filtro per nomi offuscati (solitamente 1 o 2 lettere)
+            it.methodName.length <= 3
         }
     }
 }

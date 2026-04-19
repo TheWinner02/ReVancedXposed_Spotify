@@ -59,6 +59,9 @@ object Spoof {
                         XposedBridge.log("SPOOF: User-Agent impostato -> $RE_USER_AGENT")
                     }
                 })
+            } else {
+                // Se non lo trova, non crasha grazie a findClassIfExists, ma almeno lo sappiamo
+                XposedBridge.log("SPOOF-WARN: ApplicationScopeConfiguration non trovata, salto l'hook dello UA standard.")
             }
         }
 
