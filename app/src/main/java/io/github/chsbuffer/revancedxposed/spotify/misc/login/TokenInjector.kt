@@ -69,35 +69,47 @@ fun setupIntegratedLogin(classLoader: ClassLoader) {
 
             if (isLoginScreen) {
                 if (token != null) {
-                    if (isJumpingToMain) return
+                    // Se abbiamo già iniziato il salto, non fare nulla (blocca il loop)
+                    if (isJumpingToMain) {
+                        XposedBridge.log("$TAG: Salto già in corso, ignoro duplicato.")
+                        return
+                    }
 
                     XposedBridge.log("$TAG: Token rilevato! Attendo 2 secondi per la stabilizzazione di DexKit...")
                     isJumpingToMain = true
 
-                    // IL RITARDO MAGICO CHE FERMA IL LOOP
                     activity.window.decorView.postDelayed({
                         try {
-                            XposedBridge.log("$TAG: Eseguo salto alla MainActivity...")
-                            val launchIntent = activity.packageManager.getLaunchIntentForPackage(activity.packageName)
-                            launchIntent?.let {
-                                it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                                activity.startActivity(it)
-                                activity.finish()
+                            // Verifichiamo se siamo ancora in una schermata di login prima di saltare
+                            val currentClass = activity.javaClass.name
+                            if (currentClass.contains("LoginActivity", ignoreCase = true) ||
+                                currentClass.contains("Onboarding", ignoreCase = true)) {
+
+                                XposedBridge.log("$TAG: Eseguo salto alla MainActivity...")
+                                val launchIntent = activity.packageManager.getLaunchIntentForPackage(activity.packageName)
+                                launchIntent?.let {
+                                    it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                                    activity.startActivity(it)
+                                    // Non chiamare activity.finish() immediatamente, lascia che il sistema gestisca la transizione
+                                }
                             }
                         } catch (e: Exception) {
                             isJumpingToMain = false
+                            XposedBridge.log("$TAG: Errore durante il salto: ${e.message}")
                         }
                     }, 2000)
-
-                    // Reset di sicurezza dopo 5 secondi
-                    activity.window.decorView.postDelayed({ isJumpingToMain = false }, 5000)
 
                 } else {
                     XposedBridge.log("$TAG: Token assente, mostro WebLoginManager.")
                     WebLoginManager.showLoginOverlay(activity)
                 }
             } else if (className.contains("MainActivity", ignoreCase = true)) {
-                isJumpingToMain = false
+                // IMPORTANTE: Se siamo arrivati con successo alla MainActivity,
+                // resettiamo lo stato ma non permettiamo altri salti per 10 secondi
+                if (isJumpingToMain) {
+                    XposedBridge.log("$TAG: Arrivato a destinazione (MainActivity). Loop fermato.")
+                    activity.window.decorView.postDelayed({ isJumpingToMain = false }, 10000)
+                }
             }
         }
     })
