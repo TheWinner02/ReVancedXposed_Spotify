@@ -20,6 +20,14 @@ object Fingerprints {
         }
     }
 
+    fun findIntegrityProto(bridge: DexKitBridge) = bridge.findMethod {
+        searchPackages("com.spotify.integrity")
+        matcher {
+            name = "setToken"
+            paramTypes("java.lang.String")
+        }
+    }
+
     // CERCA I METODI DI SPOOF
     fun findClientDataMethods(bridge: DexKitBridge, type: String): List<MethodData> {
         val searchString = when(type) {

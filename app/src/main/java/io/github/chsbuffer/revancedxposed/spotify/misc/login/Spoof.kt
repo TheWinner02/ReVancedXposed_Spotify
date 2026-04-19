@@ -14,16 +14,15 @@ object Spoof {
 
     private const val SPOTIFY_SHA = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
 
-    // Costanti estratte dai tuoi log ReVanced (Sincronizzazione perfetta)
     private const val RE_CLIENT_VERSION = "iphone-9.0.58.558.g200011c"
     private const val RE_HARDWARE = "iPhone16,1"
     private const val RE_SYSTEM = "17.7.2"
     private const val RE_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
-    private const val RE_PLATFORM = "ios" // Trovato in vx6.smali
+    private const val RE_PLATFORM = "ios"
 
     fun apply(classLoader: ClassLoader, apkPath: String) {
 
-        // 1. SPOOF DELLA FIRMA (Previene il ban rilevando la firma originale)
+        // 1. SPOOF DELLA FIRMA
         runCatching {
             val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
             XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
@@ -40,7 +39,6 @@ object Spoof {
         }
 
         // 2. SPOOF DI SISTEMA (BUILD)
-        // Inganna le librerie native che leggono direttamente da android.os.Build
         runCatching {
             XposedHelpers.setStaticObjectField(Build::class.java, "MODEL", RE_HARDWARE)
             XposedHelpers.setStaticObjectField(Build::class.java, "MANUFACTURER", "Apple")
@@ -50,8 +48,7 @@ object Spoof {
             XposedBridge.log("SPOOF: Proprietà Build impostate su $RE_HARDWARE ($RE_SYSTEM)")
         }
 
-        // 3. CONFIGURAZIONE DI RETE DIRETTA (Trovata tramite Grep)
-        // Questa classe gestisce la connettività e non è offuscata in questa versione
+        // 3. CONFIGURAZIONE DI RETE DIRETTA
         runCatching {
             val configClass = XposedHelpers.findClass("com.spotify.connectivity.ApplicationScopeConfiguration", classLoader)
             XposedHelpers.findAndHookMethod(configClass, "getUserAgent", object : XC_MethodReplacement() {
@@ -60,7 +57,7 @@ object Spoof {
             XposedBridge.log("SPOOF: Hook diretto su ApplicationScopeConfiguration (User-Agent).")
         }
 
-        // 4. LOGICHE DEXKIT (Piattaforma, Versioni e Integrità)
+        // 4. LOGICHE DEXKIT
         runCatching { System.loadLibrary("dexkit") }
         thread {
             Thread.sleep(1000)
@@ -68,8 +65,7 @@ object Spoof {
             runCatching {
                 DexKitBridge.create(apkPath).use { bridge ->
 
-                    // --- SPOOF PIATTAFORMA (Fondamentale per il login iOS) ---
-                    // Cerca il metodo che restituisce "android" e forzalo a "ios"
+                    // --- SPOOF PIATTAFORMA ---
                     Fingerprints.findPlatformMethod(bridge).forEach { methodData ->
                         runCatching {
                             val method = methodData.getMethodInstance(classLoader)
@@ -78,7 +74,7 @@ object Spoof {
                         }
                     }
 
-                    // --- SPOOF METODI CLIENT (Versioni e Hardware) ---
+                    // --- SPOOF METODI CLIENT ---
                     val targets = mapOf(
                         "getClientVersion" to RE_CLIENT_VERSION,
                         "getSystemVersion" to RE_SYSTEM,
@@ -86,50 +82,52 @@ object Spoof {
                     )
 
                     targets.forEach { (type, value) ->
-                        val methods = Fingerprints.findClientDataMethods(bridge, type)
-                        if (methods.isEmpty()) {
-                            XposedBridge.log("SPOOF: Attenzione, nessun metodo trovato per $type")
-                        }
-                        methods.forEach { methodData ->
+                        Fingerprints.findClientDataMethods(bridge, type).forEach { methodData ->
                             runCatching {
                                 val method = methodData.getMethodInstance(classLoader)
                                 XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(value))
-                                XposedBridge.log("SPOOF: $type patchato -> $value in ${method.name}")
+                                XposedBridge.log("SPOOF: $type patchato -> $value")
                             }
                         }
                     }
 
-                    // --- BYPASS INTEGRITÀ ---
+                    // --- BYPASS INTEGRITÀ UNIFICATO (Calendar + Proto + Google) ---
                     val integrityMethods = Fingerprints.findIntegrityCheck(bridge)
-                    XposedBridge.log("DEBUG: Metodi integrità trovati da DexKit: ${integrityMethods.size}")
+                    val protoMethods = Fingerprints.findIntegrityProto(bridge)
 
-                    integrityMethods.forEach { methodData ->
+                    XposedBridge.log("DEBUG: Trovati ${integrityMethods.size} check e ${protoMethods.size} proto.")
+
+                    (integrityMethods + protoMethods).forEach { methodData ->
                         runCatching {
                             val method = methodData.getMethodInstance(classLoader)
                             XposedBridge.hookMethod(method, object : XC_MethodHook() {
                                 override fun beforeHookedMethod(param: MethodHookParam) {
-                                    // Leggiamo dinamicamente il tipo di ritorno del metodo
                                     val returnType = (param.method as java.lang.reflect.Method).returnType
 
-                                    if (returnType == Void.TYPE) {
-                                        param.result = null
-                                    } else if (returnType == Boolean::class.javaPrimitiveType) {
-                                        param.result = false
-                                    } else {
-                                        param.result = 0 // Copre Int, Long, Short ecc.
+                                    // Se il metodo accetta una stringa (come setToken), passiamo una stringa vuota invece di null
+                                    if (param.args.isNotEmpty() && param.args[0] == null && param.method.toString().contains("String")) {
+                                        param.args[0] = ""
+                                    }
+
+                                    // Logica di ritorno per "Successo"
+                                    when {
+                                        returnType == Void.TYPE -> param.result = null
+                                        returnType == Boolean::class.javaPrimitiveType -> param.result = true // Sperimentale: true per "validato"
+                                        returnType == Int::class.javaPrimitiveType -> param.result = 0
+                                        else -> param.result = null
                                     }
                                 }
                             })
-                            XposedBridge.log("SPOOF: Integrity check neutralizzato in ${method.declaringClass.name}.${method.name}")
+                            XposedBridge.log("SPOOF: Integrity/Proto neutralizzato in ${method.declaringClass.name}.${method.name}")
                         }
                     }
 
-                    // --- BYPASS RESTRIZIONE GEOGRAFICA (14 GIORNI) ---
+                    // --- BYPASS RESTRIZIONE GEOGRAFICA ---
                     bridge.findMethod {
                         searchPackages("com.spotify", "p")
                         matcher {
                             returnType = "boolean"
-                            name = "isLoginAllowed" // Nome generico spesso usato nelle interfacce
+                            name = "isLoginAllowed"
                         }
                     }.forEach { methodData ->
                         runCatching {
@@ -141,8 +139,6 @@ object Spoof {
                 }
             }.onFailure {
                 XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${it.message}")
-                XposedBridge.log("SPOOF ERROR: DexKit stacktrace -> ${it.stackTraceToString()}")
-                XposedBridge.log("SPOOF ERROR: DexKit cause -> ${it.cause}")
             }
         }
     }
