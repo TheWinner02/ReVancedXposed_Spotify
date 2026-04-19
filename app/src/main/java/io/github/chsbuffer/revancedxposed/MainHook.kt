@@ -21,8 +21,6 @@ import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.Spoof
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.setupIntegratedLogin
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.StealthMode
-import kotlin.concurrent.thread
-import org.luckypray.dexkit.DexKitBridge
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var startupParam: StartupParam
