@@ -24,9 +24,16 @@ object Fingerprints {
     // CERCA I METODI DI SPOOF
     fun findClientDataMethods(bridge: DexKitBridge, type: String): List<MethodData> {
         val searchString = when(type) {
-            "getClientVersion" -> "iphone-" // Cerca l'inizio della versione iOS
-            "getSystemVersion" -> "17."     // Cerca la versione del sistema iOS
-            "getHardwareMachine" -> "iPhone" // Cerca l'hardware
+            // "android/" lo abbiamo trovato nel tuo grep sullo stock
+            "getClientVersion" -> "android/"
+
+            // Cerchiamo le stringhe che Spotify Android usa per identificare il sistema
+            // Invece di usare i campi Build, cerchiamo chi maneggia queste versioni comuni
+            "getSystemVersion" -> "12" // Prova con "12", "13" o "14" (le versioni Android stock)
+
+            // Spotify restituisce quasi sempre "unknown" o "google" se non riconosce l'hardware
+            "getHardwareMachine" -> "unknown"
+
             else -> return emptyList()
         }
 

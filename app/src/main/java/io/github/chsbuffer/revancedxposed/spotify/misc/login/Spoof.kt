@@ -86,11 +86,15 @@ object Spoof {
                     )
 
                     targets.forEach { (type, value) ->
-                        Fingerprints.findClientDataMethods(bridge, type).forEach { methodData ->
+                        val methods = Fingerprints.findClientDataMethods(bridge, type)
+                        if (methods.isEmpty()) {
+                            XposedBridge.log("SPOOF: Attenzione, nessun metodo trovato per $type")
+                        }
+                        methods.forEach { methodData ->
                             runCatching {
                                 val method = methodData.getMethodInstance(classLoader)
                                 XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(value))
-                                XposedBridge.log("SPOOF: $type patchato -> $value")
+                                XposedBridge.log("SPOOF: $type patchato -> $value in ${method.name}")
                             }
                         }
                     }
@@ -99,8 +103,9 @@ object Spoof {
                     Fingerprints.findIntegrityCheck(bridge).forEach { methodData ->
                         runCatching {
                             val method = methodData.getMethodInstance(classLoader)
-                            // Restituiamo true o null a seconda del tipo di controllo
-                            XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(null))
+                            // Essendo void, usiamo DO_NOTHING invece di returnConstant(null)
+                            XposedBridge.hookMethod(method, XC_MethodReplacement.DO_NOTHING)
+                            XposedBridge.log("SPOOF: Integrity check disabilitato in ${method.name}")
                         }
                     }
                 }
