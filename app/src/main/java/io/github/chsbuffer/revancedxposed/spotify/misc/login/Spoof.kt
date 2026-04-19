@@ -14,38 +14,38 @@ object Spoof {
 
     fun apply(classLoader: ClassLoader, apkPath: String) {
 
-        // 1. FIRMA CHIRURGICA (Salva l'SSL e inganna solo Spotify)
+        // 1. FIRMA CHIRURGICA (Protegge l'SSL e inganna solo i check di Spotify)
         runCatching {
             val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
             XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val pkg = param.args[0] as String
                     if (pkg.contains("spotify")) {
-                        // Controlla chi sta chiedendo la firma
                         val stackTrace = Exception().stackTrace.joinToString { it.className }
 
-                        // Se è Google (SSL/Rete) lasciamo l'originale. Se è Spotify (Sicurezza), diamo la falsa.
+                        // Se la chiamata NON viene da componenti di rete/Google, spoofiamo la firma
                         if (!stackTrace.contains("com.google.android.gms") && !stackTrace.contains("org.conscrypt")) {
                             val info = param.result as? PackageInfo ?: return
                             info.signatures = arrayOf(Signature(hexToBytes(SPOTIFY_SHA)))
                             param.result = info
-                            // XposedBridge.log("SPOOF: Firma protetta applicata.") // Decommenta se vuoi loggare
                         }
                     }
                 }
             })
         }
 
-        // 2. NEUTRALIZZAZIONE INTEGRITÀ (DexKit)
+        // 2. NEUTRALIZZAZIONE INTEGRITÀ (DexKit basato sui risultati GREP)
         runCatching { System.loadLibrary("dexkit") }
         thread {
-            Thread.sleep(1500) // Diamo tempo all'app di caricare
+            // Aumentiamo leggermente il delay per l'APK Stock (più pesante al primo avvio)
+            Thread.sleep(3000)
+
             runCatching {
                 DexKitBridge.create(apkPath).use { bridge ->
                     val integrityMethods = Fingerprints.findIntegrityCheck(bridge)
                     val protoMethods = Fingerprints.findIntegrityProto(bridge)
 
-                    XposedBridge.log("DEBUG: Trovati ${integrityMethods.size} check e ${protoMethods.size} proto.")
+                    XposedBridge.log("SPOOF: Scansione completata. Check: ${integrityMethods.size}, Proto: ${protoMethods.size}")
 
                     (integrityMethods + protoMethods).forEach { methodData ->
                         runCatching {
@@ -54,16 +54,17 @@ object Spoof {
                                 override fun beforeHookedMethod(param: MethodHookParam) {
                                     val returnType = (param.method as java.lang.reflect.Method).returnType
 
-                                    // Passiamo stringa vuota ai Token Setter
-                                    if (param.args.isNotEmpty() && param.args[0] == null && param.method.name.contains("Token")) {
-                                        param.args[0] = ""
+                                    // Se il metodo deve restituire una String (come il token() trovato nel grep)
+                                    if (returnType == String::class.java) {
+                                        param.result = "" // Restituiamo stringa vuota per bypassare l'integrità
+                                        return
                                     }
 
-                                    // Bypassiamo i controlli
+                                    // Gestione degli altri tipi di ritorno (boolean, int, void)
                                     when {
-                                        returnType == Void.TYPE -> param.result = null
                                         returnType == Boolean::class.javaPrimitiveType -> param.result = true
                                         returnType == Int::class.javaPrimitiveType -> param.result = 0
+                                        returnType == Void.TYPE -> param.result = null
                                         else -> param.result = null
                                     }
                                 }
@@ -71,6 +72,8 @@ object Spoof {
                         }
                     }
                 }
+            }.onFailure {
+                XposedBridge.log("SPOOF: Errore durante l'analisi DexKit: ${it.message}")
             }
         }
     }
