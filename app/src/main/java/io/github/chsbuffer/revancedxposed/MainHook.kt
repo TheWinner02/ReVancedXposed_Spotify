@@ -43,7 +43,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
 
-        //Spoof.apply(lpparam.classLoader, lpparam.appInfo.sourceDir)
+        Spoof.apply(lpparam.classLoader, lpparam.appInfo.sourceDir)
 
         // --- NUOVO TRIGGER: LONG CLICK SU ICONA PROFILO ---
         XposedHelpers.findAndHookMethod(
