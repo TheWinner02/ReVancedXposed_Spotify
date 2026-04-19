@@ -63,6 +63,7 @@ object Spoof {
         // 4. LOGICHE DEXKIT (Piattaforma, Versioni e Integrità)
         runCatching { System.loadLibrary("dexkit") }
         thread {
+            Thread.sleep(1000)
             XposedBridge.log("SPOOF: Thread avviato")
             runCatching {
                 DexKitBridge.create(apkPath).use { bridge ->

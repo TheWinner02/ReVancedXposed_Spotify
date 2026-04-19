@@ -22,21 +22,20 @@ object Fingerprints {
     }
 
     // CERCA I METODI DI SPOOF
-    fun findClientDataMethods(bridge: DexKitBridge, methodName: String): List<MethodData> {
+    fun findClientDataMethods(bridge: DexKitBridge, type: String): List<MethodData> {
+        val searchString = when(type) {
+            "getClientVersion" -> "iphone-" // Cerca l'inizio della versione iOS
+            "getSystemVersion" -> "17."     // Cerca la versione del sistema iOS
+            "getHardwareMachine" -> "iPhone" // Cerca l'hardware
+            else -> return emptyList()
+        }
+
         return bridge.findMethod {
-            searchPackages("com.spotify")
             matcher {
                 returnType = "java.lang.String"
-                modifiers = Modifier.PUBLIC
-                params { } // Getter senza argomenti
-
-                when (methodName) {
-                    "getClientVersion" -> usingStrings("iphone-", "9.")
-                    "getSystemVersion" -> usingStrings("15", "16", "17")
-                    "getHardwareMachine" -> usingStrings("iPhone", "iPad")
-                }
+                usingStrings(searchString)
             }
-        }.filter { it.methodName.length <= 3 }
+        }
     }
 
     // CERCA LA CLASSE DELLO USER AGENT (Per evitare l'errore "non trovata")
