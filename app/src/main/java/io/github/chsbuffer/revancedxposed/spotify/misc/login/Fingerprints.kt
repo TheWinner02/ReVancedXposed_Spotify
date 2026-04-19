@@ -6,11 +6,10 @@ import java.lang.reflect.Modifier
 
 object Fingerprints {
 
-    // IMPLEMENTAZIONE REALE REVANCED
     fun findIntegrityCheck(bridge: DexKitBridge) = bridge.findMethod {
-        searchPackages("com.spotify") // Fuori dal matcher
         matcher {
-            returnType = "void"
+            returnType = "boolean"
+            // Usiamo i bitmask Int per i modificatori
             modifiers = Modifier.PUBLIC or Modifier.FINAL
             invokeMethods {
                 add {
@@ -21,11 +20,11 @@ object Fingerprints {
         }
     }
 
-    // CERCA I METODI DI SPOOF
     fun findClientDataMethods(bridge: DexKitBridge, type: String): List<MethodData> {
         return when(type) {
             "getClientVersion" -> bridge.findMethod {
                 matcher {
+                    modifiers = Modifier.PUBLIC
                     returnType = "java.lang.String"
                     usingStrings("android/")
                 }
@@ -33,43 +32,42 @@ object Fingerprints {
 
             "getSystemVersion" -> bridge.findMethod {
                 matcher {
+                    modifiers = Modifier.PUBLIC
                     returnType = "java.lang.String"
-                    // Usiamo "REL" per centrare Build.VERSION.RELEASE in modo più mirato
                     usingStrings("REL")
                 }
             }
 
             "getHardwareMachine" -> bridge.findMethod {
-                // Spostato fuori dal matcher per risolvere l'errore del receiver
                 searchPackages("com.spotify.connectivity", "p")
                 matcher {
+                    modifiers = Modifier.PUBLIC
                     returnType = "java.lang.String"
                     usingStrings("unknown")
                 }
             }
-
             else -> emptyList()
         }
     }
 
-    // CERCA LA CLASSE DELLO USER AGENT
-    fun findUserAgentSetter(bridge: DexKitBridge) = bridge.findMethod {
-        searchPackages("com.spotify") // Fuori dal matcher
-        matcher {
-            name = "setDefaultHTTPUserAgent"
-            paramTypes("java.lang.String")
+    fun findPlatformMethod(bridge: DexKitBridge): List<MethodData> {
+        return bridge.findMethod {
+            searchPackages("com.spotify.connectivity", "p")
+            matcher {
+                modifiers = Modifier.PUBLIC
+                returnType = "java.lang.String"
+                usingStrings("android")
+                // Abbiamo rimosso instructionSize che causava l'errore.
+                // Il filtro sul pacchetto e sulla stringa "android" è sufficiente.
+            }
         }
     }
 
-    // CERCA IL METODO DELLA PIATTAFORMA
-    fun findPlatformMethod(bridge: DexKitBridge): List<MethodData> {
-        return bridge.findMethod {
-            // Spostato fuori dal matcher per risolvere l'errore del receiver
-            searchPackages("com.spotify.connectivity", "p")
-            matcher {
-                returnType = "java.lang.String"
-                usingStrings("android")
-            }
+    fun findUserAgentSetter(bridge: DexKitBridge) = bridge.findMethod {
+        searchPackages("com.spotify")
+        matcher {
+            returnType = "java.lang.String"
+            usingStrings("Spotify/")
         }
     }
 }
