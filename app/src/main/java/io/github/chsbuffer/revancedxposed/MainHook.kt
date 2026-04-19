@@ -85,7 +85,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         inContext(lpparam) { app ->
             this.app = app
-            //setupIntegratedLogin(lpparam.classLoader)
+            setupIntegratedLogin(lpparam.classLoader)
 
             // Carichiamo le preferenze una volta sola
             val prefs = app.getSharedPreferences("spotify_prefs", 0)
