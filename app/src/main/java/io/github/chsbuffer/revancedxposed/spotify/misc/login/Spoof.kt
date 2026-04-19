@@ -136,6 +136,14 @@ object Spoof {
                             XposedBridge.log("SPOOF: Bypass restrizione geografica applicato")
                         }
                     }
+
+                    Fingerprints.findDealerIdMethod(bridge).forEach { methodData ->
+                        runCatching {
+                            val method = methodData.getMethodInstance(classLoader)
+                            XposedBridge.hookMethod(method, XC_MethodReplacement.returnConstant(0))
+                            XposedBridge.log("SPOOF: Dealer ID forzato a 0 (iOS)")
+                        }
+                    }
                 }
             }.onFailure {
                 XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${it.message}")

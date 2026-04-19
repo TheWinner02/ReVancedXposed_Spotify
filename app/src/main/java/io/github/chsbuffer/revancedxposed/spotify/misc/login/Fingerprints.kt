@@ -28,6 +28,14 @@ object Fingerprints {
         }
     }
 
+    fun findDealerIdMethod(bridge: DexKitBridge) = bridge.findMethod {
+        searchPackages("com.spotify", "p")
+        matcher {
+            returnType = "int"
+            usingNumbers(7) // 7 è il codice Android originale
+        }
+    }
+
     // CERCA I METODI DI SPOOF
     fun findClientDataMethods(bridge: DexKitBridge, type: String): List<MethodData> {
         val searchString = when(type) {
