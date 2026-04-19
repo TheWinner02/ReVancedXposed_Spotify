@@ -6,11 +6,11 @@ import java.lang.reflect.Modifier
 
 object Fingerprints {
 
-    // IMPLEMENTAZIONE REALE REVANCED: Cerca il metodo void che usa Calendar.get
+    // IMPLEMENTAZIONE REALE REVANCED
     fun findIntegrityCheck(bridge: DexKitBridge) = bridge.findMethod {
-        searchPackages("com.spotify")
+        searchPackages("com.spotify") // Fuori dal matcher
         matcher {
-            returnType = "void" // <-- ReVanced usa V (void), non boolean!
+            returnType = "void"
             modifiers = Modifier.PUBLIC or Modifier.FINAL
             invokeMethods {
                 add {
@@ -23,42 +23,48 @@ object Fingerprints {
 
     // CERCA I METODI DI SPOOF
     fun findClientDataMethods(bridge: DexKitBridge, type: String): List<MethodData> {
-        val searchString = when(type) {
-            // "android/" lo abbiamo trovato nel tuo grep sullo stock
-            "getClientVersion" -> "android/"
-
-            // Cerchiamo le stringhe che Spotify Android usa per identificare il sistema
-            // Invece di usare i campi Build, cerchiamo chi maneggia queste versioni comuni
-            "getSystemVersion" -> "13" // Prova con "12", "13" o "14" (le versioni Android stock)
-
-            // Spotify restituisce quasi sempre "unknown" o "google" se non riconosce l'hardware
-            "getHardwareMachine" -> "unknown"
-
-            else -> return emptyList()
-        }
-
-        return bridge.findMethod {
-            matcher {
-                returnType = "java.lang.String"
-                usingStrings(searchString)
+        return when(type) {
+            "getClientVersion" -> bridge.findMethod {
+                matcher {
+                    returnType = "java.lang.String"
+                    usingStrings("android/")
+                }
             }
+
+            "getSystemVersion" -> bridge.findMethod {
+                matcher {
+                    returnType = "java.lang.String"
+                    // Usiamo "REL" per centrare Build.VERSION.RELEASE in modo più mirato
+                    usingStrings("REL")
+                }
+            }
+
+            "getHardwareMachine" -> bridge.findMethod {
+                // Spostato fuori dal matcher per risolvere l'errore del receiver
+                searchPackages("com.spotify.connectivity", "p")
+                matcher {
+                    returnType = "java.lang.String"
+                    usingStrings("unknown")
+                }
+            }
+
+            else -> emptyList()
         }
     }
 
-    // CERCA LA CLASSE DELLO USER AGENT (Per evitare l'errore "non trovata")
+    // CERCA LA CLASSE DELLO USER AGENT
     fun findUserAgentSetter(bridge: DexKitBridge) = bridge.findMethod {
-        searchPackages("com.spotify")
+        searchPackages("com.spotify") // Fuori dal matcher
         matcher {
             name = "setDefaultHTTPUserAgent"
             paramTypes("java.lang.String")
         }
     }
 
-    // In Fingerprints.kt
+    // CERCA IL METODO DELLA PIATTAFORMA
     fun findPlatformMethod(bridge: DexKitBridge): List<MethodData> {
         return bridge.findMethod {
-            // Invece di tutto com.spotify, cerchiamo solo nel pacchetto connectivity
-            // dove abbiamo visto trovarsi le classi interessanti nei tuoi log
+            // Spostato fuori dal matcher per risolvere l'errore del receiver
             searchPackages("com.spotify.connectivity", "p")
             matcher {
                 returnType = "java.lang.String"
