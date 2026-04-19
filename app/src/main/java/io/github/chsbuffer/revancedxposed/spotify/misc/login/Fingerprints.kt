@@ -2,80 +2,17 @@ package io.github.chsbuffer.revancedxposed.spotify.misc.login
 
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.result.MethodData
-import java.lang.reflect.Modifier
 
 object Fingerprints {
-
-    //Cerca il metodo void che usa Calendar.get
-    fun findIntegrityCheck(bridge: DexKitBridge) = bridge.findMethod {
-        searchPackages("com.spotify", "p")
-        matcher {
-            // Cerchiamo l'azione di chiamare Calendar.get
-            invokeMethods {
-                add {
-                    declaredClass("java.util.Calendar")
-                    name("get")
-                }
-            }
-        }
+    // Cerchiamo solo le chiamate all'integrità Google
+    fun findIntegrityCheck(bridge: DexKitBridge): List<MethodData> = bridge.findMethod {
+        searchPackages("p", "com.google.android.play.core.integrity")
+        matcher { usingStrings("cloud_project_number") }
     }
 
-    fun findIntegrityProto(bridge: DexKitBridge) = bridge.findMethod {
+    // Cerchiamo il pacchetto che invia il token alla liborbit
+    fun findIntegrityProto(bridge: DexKitBridge): List<MethodData> = bridge.findMethod {
         searchPackages("com.spotify.integrity")
-        matcher {
-            name = "setToken"
-            paramTypes("java.lang.String")
-        }
-    }
-
-    fun findDealerIdMethod(bridge: DexKitBridge) = bridge.findMethod {
-        searchPackages("com.spotify", "p")
-        matcher {
-            returnType = "int"
-            usingNumbers(7) // 7 è il codice Android originale
-        }
-    }
-
-    // CERCA I METODI DI SPOOF
-    fun findClientDataMethods(bridge: DexKitBridge, type: String): List<MethodData> {
-        val searchString = when(type) {
-            // "android/" lo abbiamo trovato nel tuo grep sullo stock
-            "getClientVersion" -> "android/"
-            // Cerchiamo le stringhe che Spotify Android usa per identificare il sistema
-            // Invece di usare i campi Build, cerchiamo chi maneggia queste versioni comuni
-            "getSystemVersion" -> "REL" // Prova con "12", "13" o "14" (le versioni Android stock)
-
-            // Spotify restituisce quasi sempre "unknown" o "google" se non riconosce l'hardware
-            "getHardwareMachine" -> "unknown"
-            else -> return emptyList()
-        }
-
-        return bridge.findMethod {
-            matcher {
-                returnType = "java.lang.String"
-                usingStrings(searchString)
-            }
-        }
-    }
-
-    // CERCA LA CLASSE DELLO USER AGENT (Per evitare l'errore "non trovata")
-    fun findUserAgentSetter(bridge: DexKitBridge) = bridge.findMethod {
-        searchPackages("com.spotify")
-        matcher {
-            name = "setDefaultHTTPUserAgent"
-            paramTypes("java.lang.String")
-        }
-    }
-
-    fun findPlatformMethod(bridge: DexKitBridge): List<MethodData> {
-        return bridge.findMethod {
-            // Invece di tutto com.spotify, cerchiamo solo nel pacchetto connectivity
-            // dove abbiamo visto trovarsi le classi interessanti nei tuoi log
-            searchPackages("com.spotify.connectivity", "p")
-            matcher {
-                returnType = "java.lang.String"
-                usingStrings("android")
-            }
-        }
+        matcher { name = "setToken" }
     }
 }
