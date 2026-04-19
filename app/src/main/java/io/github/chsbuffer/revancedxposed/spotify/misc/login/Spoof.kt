@@ -16,9 +16,9 @@ object Spoof {
 
     // Costanti estratte dai tuoi log ReVanced (Sincronizzazione perfetta)
     private const val RE_CLIENT_VERSION = "iphone-9.0.58.558.g200011c"
-    private const val RE_HARDWARE = "iPhone16,1"
+    private const val RE_HARDWARE = "iPhone14,1"
     private const val RE_SYSTEM = "17.7.2"
-    private const val RE_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
+    private const val RE_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone14,1)"
     private const val RE_PLATFORM = "ios" // Trovato in vx6.smali
 
     fun apply(classLoader: ClassLoader, apkPath: String) {
