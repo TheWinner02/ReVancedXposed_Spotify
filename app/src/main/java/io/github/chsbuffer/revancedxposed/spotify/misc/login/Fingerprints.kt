@@ -6,11 +6,11 @@ import java.lang.reflect.Modifier
 
 object Fingerprints {
 
-    // IMPLEMENTAZIONE REALE REVANCED: Cerca il metodo void che usa Calendar.get
-
+    //Cerca il metodo void che usa Calendar.get
     fun findIntegrityCheck(bridge: DexKitBridge) = bridge.findMethod {
-        searchPackages("com.spotify")
+        searchPackages("com.spotify", "p")
         matcher {
+            // Cerchiamo l'azione di chiamare Calendar.get
             invokeMethods {
                 add {
                     declaredClass("java.util.Calendar")
