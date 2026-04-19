@@ -48,17 +48,16 @@ object Fingerprints {
         }
     }
 
-    // Aggiungi questo in Fingerprints.kt
-
+    // In Fingerprints.kt
     fun findPlatformMethod(bridge: DexKitBridge): List<MethodData> {
         return bridge.findMethod {
-            searchPackages("com.spotify")
+            // Invece di tutto com.spotify, cerchiamo solo nel pacchetto connectivity
+            // dove abbiamo visto trovarsi le classi interessanti nei tuoi log
+            searchPackages("com.spotify.connectivity", "p")
             matcher {
                 returnType = "java.lang.String"
-                params { }
-                // Nella versione stock, questo metodo contiene la stringa "android"
                 usingStrings("android")
             }
-        }.filter { it.methodName.length <= 3 } // Di solito è un metodo offuscato corto
+        }
     }
 }

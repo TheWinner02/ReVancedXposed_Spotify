@@ -61,10 +61,10 @@ object Spoof {
         }
 
         // 4. LOGICHE DEXKIT (Piattaforma, Versioni e Integrità)
+        runCatching { System.loadLibrary("dexkit") }
         thread {
             XposedBridge.log("SPOOF: Thread avviato")
             runCatching {
-                System.loadLibrary("dexkit")
                 DexKitBridge.create(apkPath).use { bridge ->
 
                     // --- SPOOF PIATTAFORMA (Fondamentale per il login iOS) ---
@@ -105,6 +105,8 @@ object Spoof {
                 }
             }.onFailure {
                 XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${it.message}")
+                XposedBridge.log("SPOOF ERROR: DexKit stacktrace -> ${it.stackTraceToString()}")
+                XposedBridge.log("SPOOF ERROR: DexKit cause -> ${it.cause}")
             }
         }
     }
