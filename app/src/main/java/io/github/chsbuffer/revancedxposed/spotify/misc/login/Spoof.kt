@@ -14,59 +14,49 @@ object Spoof {
 
     fun apply(classLoader: ClassLoader, apkPath: String) {
 
-        // 1. FIRMA UNIVERSALE (Indispensabile per oPatch)
+        // 1. FIRMA UNIVERSALE E CHIRURGICA (Unificata per oPatch)
         runCatching {
-            val packageManagerClass = Class.forName("android.app.ApplicationPackageManager")
-            val getPackageInfoMethod = packageManagerClass.getDeclaredMethod("getPackageInfo", String::class.java, Int::class.javaPrimitiveType)
+            val pmClass = Class.forName("android.app.ApplicationPackageManager")
+            val getPackageInfoMethod = pmClass.getDeclaredMethod("getPackageInfo", String::class.java, Int::class.javaPrimitiveType)
 
             XposedBridge.hookMethod(getPackageInfoMethod, object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    val pkgName = param.args[0] as String
-                    if (pkgName == "com.spotify.music") {
-                        val info = param.result as? PackageInfo ?: return
+                    val pkgName = param.args[0] as? String ?: return
 
-                        // Sostituiamo forzatamente la firma di oPatch con quella originale
-                        val fakeSignature = Signature(hexToBytes(SPOTIFY_SHA))
-
-                        // Copriamo sia il vecchio metodo che il nuovo (signingInfo)
-                        info.signatures = arrayOf(fakeSignature)
-
-                        runCatching {
-                            val signingInfoClass = Class.forName("android.content.pm.SigningInfo")
-                            val signingInfo = XposedHelpers.newInstance(signingInfoClass)
-                            // Qui forziamo la firma dentro il SigningInfo per Android 9+
-                            XposedHelpers.setObjectField(info, "signingInfo", signingInfo)
-                        }
-
-                        param.result = info
-                        XposedBridge.log("SPOOF: Firma oPatch sostituita con Originale")
-                    }
-                }
-            })
-        }
-
-        // 1. FIRMA CHIRURGICA (Inganna Spotify ma non rompe l'SSL/Google)
-        runCatching {
-            val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
-            XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val pkg = param.args[0] as String
-                    if (pkg.contains("spotify")) {
+                    // Controlliamo se è Spotify
+                    if (pkgName.contains("spotify", ignoreCase = true)) {
                         val stackTrace = Exception().stackTrace.joinToString { it.className }
+
+                        // Protezione SSL/Google: se la chiamata viene da GMS o Conscrypt, non tocchiamo nulla
                         if (!stackTrace.contains("com.google.android.gms") && !stackTrace.contains("org.conscrypt")) {
                             val info = param.result as? PackageInfo ?: return
-                            info.signatures = arrayOf(Signature(hexToBytes(SPOTIFY_SHA)))
+                            val fakeSignature = Signature(hexToBytes(SPOTIFY_SHA))
+
+                            // Spoof classico
+                            info.signatures = arrayOf(fakeSignature)
+
+                            // Spoof moderno (Android 9+) per bypassare i check profondi
+                            runCatching {
+                                if (android.os.Build.VERSION.SDK_INT >= 28) {
+                                    val signingInfoClass = Class.forName("android.content.pm.SigningInfo")
+                                    val signingInfo = XposedHelpers.newInstance(signingInfoClass)
+                                    XposedHelpers.setObjectField(info, "signingInfo", signingInfo)
+                                }
+                            }
+
                             param.result = info
+                            XposedBridge.log("SPOOF: Firma sostituita con successo per $pkgName")
                         }
                     }
                 }
             })
         }
 
-        // 2. NEUTRALIZZAZIONE INTEGRITÀ
+        // 2. NEUTRALIZZAZIONE INTEGRITÀ (DexKit)
         runCatching { System.loadLibrary("dexkit") }
         thread {
-            Thread.sleep(3000)
+            // Delay ridotto a 500ms: con oPatch dobbiamo essere veloci
+            Thread.sleep(500)
             runCatching {
                 DexKitBridge.create(apkPath).use { bridge ->
                     val integrityMethods = Fingerprints.findIntegrityCheck(bridge)
@@ -77,8 +67,6 @@ object Spoof {
                     (integrityMethods + protoMethods).forEach { methodData ->
                         runCatching {
                             val method = methodData.getMethodInstance(classLoader)
-
-                            // LOG DI DEBUG: Ci conferma che l'hook è attivo su questo metodo
                             XposedBridge.log("SPOOF: Applicazione hook su -> ${method.declaringClass.name}.${method.name}")
 
                             XposedBridge.hookMethod(method, object : XC_MethodHook() {
@@ -86,28 +74,21 @@ object Spoof {
                                     val returnType = (param.method as java.lang.reflect.Method).returnType
                                     val methodName = param.method.name.lowercase()
 
-                                    // Se il metodo restituisce una Stringa (è il TOKEN trovato nel grep)
-                                    if (returnType == String::class.java) {
-                                        param.result = "" // Bypass: inviamo una stringa vuota invece del token criptato
-                                        XposedBridge.log("SPOOF: Chiamata intercettata! Token rimpiazzato in -> ${param.method.name}")
-                                        return
-                                    }
-
-                                    // Gestione Booleani
-                                    if (returnType == Boolean::class.javaPrimitiveType) {
-                                        param.result = !methodName.contains("error") && !methodName.contains("fail")
-                                        XposedBridge.log("SPOOF: Booleano forzato in -> ${param.method.name} a ${param.result}")
-                                        return
-                                    }
-
-                                    // Per gli interi (codici di errore), 0 = Successo
-                                    if (returnType == Int::class.javaPrimitiveType) {
-                                        param.result = 0
-                                        return
-                                    }
-
-                                    if (returnType == Void.TYPE) {
-                                        param.result = null
+                                    when {
+                                        returnType == String::class.java -> {
+                                            param.result = ""
+                                            XposedBridge.log("SPOOF: Token neutralizzato in -> ${param.method.name}")
+                                        }
+                                        returnType == Boolean::class.javaPrimitiveType -> {
+                                            param.result = !methodName.contains("error") && !methodName.contains("fail")
+                                            XposedBridge.log("SPOOF: Booleano forzato in -> ${param.method.name} a ${param.result}")
+                                        }
+                                        returnType == Int::class.javaPrimitiveType -> {
+                                            param.result = 0
+                                        }
+                                        returnType == Void.TYPE -> {
+                                            param.result = null
+                                        }
                                     }
                                 }
                             })
