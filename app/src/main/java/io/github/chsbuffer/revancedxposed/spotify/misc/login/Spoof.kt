@@ -14,6 +14,37 @@ object Spoof {
 
     fun apply(classLoader: ClassLoader, apkPath: String) {
 
+        // 1. FIRMA UNIVERSALE (Indispensabile per oPatch)
+        runCatching {
+            val packageManagerClass = Class.forName("android.app.ApplicationPackageManager")
+            val getPackageInfoMethod = packageManagerClass.getDeclaredMethod("getPackageInfo", String::class.java, Int::class.javaPrimitiveType)
+
+            XposedBridge.hookMethod(getPackageInfoMethod, object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val pkgName = param.args[0] as String
+                    if (pkgName == "com.spotify.music") {
+                        val info = param.result as? PackageInfo ?: return
+
+                        // Sostituiamo forzatamente la firma di oPatch con quella originale
+                        val fakeSignature = Signature(hexToBytes(SPOTIFY_SHA))
+
+                        // Copriamo sia il vecchio metodo che il nuovo (signingInfo)
+                        info.signatures = arrayOf(fakeSignature)
+
+                        runCatching {
+                            val signingInfoClass = Class.forName("android.content.pm.SigningInfo")
+                            val signingInfo = XposedHelpers.newInstance(signingInfoClass)
+                            // Qui forziamo la firma dentro il SigningInfo per Android 9+
+                            XposedHelpers.setObjectField(info, "signingInfo", signingInfo)
+                        }
+
+                        param.result = info
+                        XposedBridge.log("SPOOF: Firma oPatch sostituita con Originale")
+                    }
+                }
+            })
+        }
+
         // 1. FIRMA CHIRURGICA (Inganna Spotify ma non rompe l'SSL/Google)
         runCatching {
             val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
