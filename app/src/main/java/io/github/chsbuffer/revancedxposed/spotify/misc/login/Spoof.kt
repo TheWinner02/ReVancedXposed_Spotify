@@ -186,15 +186,18 @@ object Spoof {
                         }
                     }
 
-
-
-// --- BYPASS INTEGRITÀ ---
+                    // --- BYPASS INTEGRITÀ ---
                     Fingerprints.findIntegrityCheck(bridge).forEach { methodData ->
                         runCatching {
                             val method = methodData.getMethodInstance(classLoader)
-                            // Essendo void, usiamo DO_NOTHING invece di returnConstant(null)
-                            XposedBridge.hookMethod(method, XC_MethodReplacement.DO_NOTHING)
-                            XposedBridge.log("SPOOF: Integrity check disabilitato in ${method.name}")
+                            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                                override fun beforeHookedMethod(param: MethodHookParam) {
+                                    // Forziamo il ritorno a 0 (che vale sia come false che come intero)
+                                    // Questo simula il "return-early" di ReVanced
+                                    param.result = 0
+                                }
+                            })
+                            XposedBridge.log("SPOOF: Integrity check neutralizzato in ${method.declaringClass.name}.${method.name}")
                         }
                     }
 

@@ -11,8 +11,6 @@ object Fingerprints {
     fun findIntegrityCheck(bridge: DexKitBridge) = bridge.findMethod {
         searchPackages("com.spotify")
         matcher {
-            returnType = "void" // <-- ReVanced usa V (void), non boolean!
-            modifiers = Modifier.PUBLIC or Modifier.FINAL
             invokeMethods {
                 add {
                     declaredClass("java.util.Calendar")
@@ -29,7 +27,7 @@ object Fingerprints {
             "getClientVersion" -> "android/"
             // Cerchiamo le stringhe che Spotify Android usa per identificare il sistema
             // Invece di usare i campi Build, cerchiamo chi maneggia queste versioni comuni
-            "getSystemVersion" -> "12" // Prova con "12", "13" o "14" (le versioni Android stock)
+            "getSystemVersion" -> "REL" // Prova con "12", "13" o "14" (le versioni Android stock)
 
             // Spotify restituisce quasi sempre "unknown" o "google" se non riconosce l'hardware
             "getHardwareMachine" -> "unknown"
