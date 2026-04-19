@@ -3,16 +3,16 @@ package io.github.chsbuffer.revancedxposed.spotify.misc.login
 import org.luckypray.dexkit.DexKitBridge
 
 object Fingerprints {
-    // Cerchiamo la classe che istanzia il manager di Google
+    // Ora puntiamo alla classe p.llf0 e p.jlf0 usando le stringhe reali dell'APK Stock
     fun findIntegrityCheck(bridge: DexKitBridge) = bridge.findMethod {
         searchPackages("p")
         matcher {
-            // Cerchiamo chiunque usi la stringa "cloud_project_number" o riferimenti a Integrity
-            // Proviamo a cercare la stringa più generica che abbiamo visto nei grep
-            usingStrings("com.google.android.play.core.integrity")
+            // Questa stringa appare nei tuoi log di grep_jlf0_strings.txt
+            usingStrings("standard_pi_request", "outcome", "success")
         }
     }
 
+    // Questo ne trovava già 4, lo rendiamo solo più solido
     fun findIntegrityProto(bridge: DexKitBridge) = bridge.findMethod {
         searchPackages("p", "com.google.android.play.core.integrity")
         matcher {
