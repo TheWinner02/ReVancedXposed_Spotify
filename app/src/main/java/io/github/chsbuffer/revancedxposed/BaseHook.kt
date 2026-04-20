@@ -112,11 +112,11 @@ class SharedPrefCache(app: Application) : DexKitCacheBridge.Cache {
         map.getOrDefault(key, null)?.takeIf(String::isNotBlank)?.split('|') ?: default
 
     override fun put(key: String, value: String) {
-        map.put(key, value)
+        map[key] = value
     }
 
     override fun putList(key: String, value: List<String>) {
-        map.put(key, value.joinToString("|"))
+        map[key] = value.joinToString("|")
     }
 
     override fun remove(key: String) {
@@ -153,12 +153,10 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
     override fun Hook() {
         val t = measureTimeMillis {
             tryLoadCache()
-            try {
+            dexkit.use { dexkit ->
                 applyHooks()
                 handleResult()
                 logDebugInfo()
-            } finally {
-                dexkit.close()
             }
         }
         Logger.printDebug { "${lpparam.packageName} handleLoadPackage: ${t}ms" }
@@ -196,6 +194,7 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
         }
     }
 
+    @SuppressLint("SuspiciousIndentation")
     private fun handleResult() {
         cache.saveCache()
         val success = failedHooks.isEmpty()
@@ -289,7 +288,7 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
     ): DexKitBridge.() -> List<T> {
         return {
             try {
-                funcFunc().also {
+                funcFunc().also { it ->
                     Logger.printInfo { "$key Matches: ${it.joinToString { serializer(it) }}" }
                 }
             } catch (e: Exception) {

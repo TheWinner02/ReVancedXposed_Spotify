@@ -12,7 +12,7 @@ import androidx.annotation.Nullable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
-/**
+/*
  * ReVanced specific logger.  Logging is done to standard device log (accessible thru ADB),
  * and additionally accessible thru {@link LogBufferManager}.
  *
@@ -72,7 +72,7 @@ public class Logger {
         return fullClassName.substring(simpleClassNameStartIndex, dollarSignIndex);
     }
 
-    /**
+    /*
      * Internal method to handle logging to Android Log and {@link LogBufferManager}.
      * Appends the log message, stack trace (if enabled), and exception (if present) to logBuffer
      * with class name but without 'revanced:' prefix.
@@ -148,7 +148,7 @@ public class Logger {
         return Utils.context != null && DEBUG_STACKTRACE.get();
     }
 
-    /**
+    /*
      * Logs debug messages under the outer class name of the code calling this method.
      * <p>
      * Whenever possible, the log string should be constructed entirely inside
@@ -159,7 +159,7 @@ public class Logger {
         printDebug(message, null);
     }
 
-    /**
+    /*
      * Logs debug messages under the outer class name of the code calling this method.
      * <p>
      * Whenever possible, the log string should be constructed entirely inside

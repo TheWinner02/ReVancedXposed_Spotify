@@ -18,33 +18,23 @@ import de.robv.android.xposed.XposedHelpers;
 @SuppressWarnings("unused")
 public final class UnlockPremiumPatch {
 
-    private static class OverrideAttribute {
-        /**
-         * Account attribute key.
-         */
-        final String key;
+    /**
+     * @param key           Account attribute key.
+     * @param overrideValue Override value.
+     * @param isExpected    If this attribute is expected to be present in all situations.
+     *                      If false, then no error is raised if the attribute is missing.
+     */
+    private record OverrideAttribute(String key, Object overrideValue, boolean isExpected) {
+            OverrideAttribute(String key, Object overrideValue) {
+                this(key, overrideValue, true);
+            }
 
-        /**
-         * Override value.
-         */
-        final Object overrideValue;
-
-        /**
-         * If this attribute is expected to be present in all situations.
-         * If false, then no error is raised if the attribute is missing.
-         */
-        final boolean isExpected;
-
-        OverrideAttribute(String key, Object overrideValue) {
-            this(key, overrideValue, true);
+            private OverrideAttribute(String key, Object overrideValue, boolean isExpected) {
+                this.key = Objects.requireNonNull(key);
+                this.overrideValue = Objects.requireNonNull(overrideValue);
+                this.isExpected = isExpected;
+            }
         }
-
-        OverrideAttribute(String key, Object overrideValue, boolean isExpected) {
-            this.key = Objects.requireNonNull(key);
-            this.overrideValue = Objects.requireNonNull(overrideValue);
-            this.isExpected = isExpected;
-        }
-    }
 
     private static final List<OverrideAttribute> PREMIUM_OVERRIDES = List.of(
             // Works along on-demand, allows playing any song without restriction.

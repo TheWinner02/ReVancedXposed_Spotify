@@ -3,7 +3,7 @@ import java.util.Random
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.jetbrains.kotlin.android)
+    //alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.jetbrains.kotlin.plugin.serialization)
 }
 
@@ -104,7 +104,7 @@ tasks.withType<Test> {
 dependencies {
 //    implementation(libs.dexkit)
     implementation(group = "", name = "dexkit-android", ext = "aar")
-    implementation("com.google.flatbuffers:flatbuffers-java:25.2.10") // dexkit dependency
+    implementation(libs.flatbuffers.java) // dexkit dependency
     implementation(libs.annotation)
     implementation(libs.kotlinx.serialization.protobuf)
     implementation(libs.material)

@@ -18,11 +18,12 @@ import android.widget.TextView
 import androidx.core.content.edit
 import java.io.File
 import kotlin.system.exitProcess
+import androidx.core.graphics.toColorInt
 
 object SettingsSheet {
 
     // MODIFICA: La funzione ora accetta anche la anchorView (la vista dell'avatar)
-    @SuppressLint("ClickableViewAccessibility")
+    @SuppressLint("ClickableViewAccessibility", "SetTextI18n")
     fun show(activity: Activity, anchorView: View?) {
         val prefs = activity.getSharedPreferences("spotify_prefs", Context.MODE_PRIVATE)
         val dialog = Dialog(activity, android.R.style.Theme_Translucent_NoTitleBar)
@@ -32,7 +33,7 @@ object SettingsSheet {
         val root = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#202020"))
+                setColor("#202020".toColorInt())
                 val radius = (28 * density)
                 // Angoli stondati su tutti i lati per una card fluttuante
                 cornerRadii = floatArrayOf(radius, radius, radius, radius, radius, radius, radius, radius)
@@ -76,7 +77,7 @@ object SettingsSheet {
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#1DB954"))
+                setColor("#1DB954".toColorInt())
                 cornerRadius = 100f
             }
             elevation = 15f
@@ -112,7 +113,7 @@ object SettingsSheet {
         }.apply {
             // Posizionato al centro per enfatizzare l'espansione e compressione come una card
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#B3000000"))
+            setBackgroundColor("#B3000000".toColorInt())
             addView(root)
         }
 
@@ -164,7 +165,7 @@ object SettingsSheet {
         dialog.show()
     }
 
-    @SuppressLint("UseSwitchCompatOrMaterialCode")
+    @SuppressLint("UseSwitchCompatOrMaterialCode", "SetWorldReadable")
     private fun createRow(context: Context, label: String, subtitle: String, key: String, prefs: android.content.SharedPreferences): LinearLayout {
         val density = context.resources.displayMetrics.density
         val row = LinearLayout(context).apply {
@@ -184,12 +185,12 @@ object SettingsSheet {
             text = label; setTextColor(Color.WHITE); textSize = 16f; setTypeface(null, Typeface.BOLD)
         })
         textContainer.addView(TextView(context).apply {
-            text = subtitle; setTextColor(Color.parseColor("#A0A0A0")); textSize = 12f
+            text = subtitle; setTextColor("#A0A0A0".toColorInt()); textSize = 12f
         })
         row.addView(textContainer)
         val toggle = Switch(context).apply {
             isChecked = prefs.getBoolean(key, true)
-            val spotifyGreen = Color.parseColor("#1DB954")
+            val spotifyGreen = "#1DB954".toColorInt()
             thumbDrawable?.setTint(if (isChecked) spotifyGreen else Color.GRAY)
             scaleX = 1.50f
             scaleY = 1.50f

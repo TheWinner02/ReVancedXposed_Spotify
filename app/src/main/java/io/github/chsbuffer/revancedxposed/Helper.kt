@@ -77,14 +77,12 @@ class ScopedHook : XC_MethodHook() {
     ) {
         XposedBridge.hookMethod(hookMethod, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                val outerParam = outerParam.get()
-                if (outerParam == null) return
+                val outerParam = outerParam.get() ?: return
                 before(ScopedHookParam(outerParam), param)
             }
 
             override fun afterHookedMethod(param: MethodHookParam) {
-                val outerParam = outerParam.get()
-                if (outerParam == null) return
+                val outerParam = outerParam.get() ?: return
                 after(ScopedHookParam(outerParam), param)
             }
         })

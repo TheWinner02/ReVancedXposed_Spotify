@@ -144,7 +144,7 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
         // 1. RICONOSCIMENTO IMMAGINI (Copertine Brani e Playlist)
         // Usiamo il controllo sulla classe ImageView per non mancare nulla
         val isAvatar = className.contains("faceview") || resName.contains("face")
-        val isImage = view is android.widget.ImageView || className.contains("imageview") && !isAvatar
+        val isImage = view is ImageView || className.contains("imageview") && !isAvatar
 
         // 2. RICONOSCIMENTO HEADER E COVER (La copertina grande in alto)
         val isCoverOrHeader = resName.contains("header") ||

@@ -111,6 +111,8 @@ interface ResourceFinder {
     operator fun get(type: String, name: String): Int
 }
 
+lateinit var resourceMappings: ResourceFinder
+
 typealias FindFunc = DexKitBridge.() -> Any
 typealias FindClassFunc = DexKitBridge.() -> ClassData
 typealias FindMethodFunc = DexKitBridge.() -> MethodData
