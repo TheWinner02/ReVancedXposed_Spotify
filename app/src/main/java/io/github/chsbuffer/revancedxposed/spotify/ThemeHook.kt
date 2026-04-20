@@ -228,7 +228,7 @@ class ThemeHook(private val app: Application, private val lpparam: XC_LoadPackag
 
             // 2. TESTI E ICONE LUMINOSE -> ACCENT
             // (Puoi commentare questo se preferisci che i testi bianchi restino bianchi invece di colorarsi)
-            (r > 150 && Math.abs(r - g) < 20 && Math.abs(r - b) < 20) -> accent
+            //(r > 150 && Math.abs(r - g) < 20 && Math.abs(r - b) < 20) -> accent
 
             // 3. SFONDO BASE (Nero profondo) -> PRIMARY BG
             // Spotify usa valori RGB molto bassi (es. 18,18,18) per lo sfondo dietro a tutto.
