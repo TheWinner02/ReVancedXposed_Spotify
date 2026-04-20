@@ -8,12 +8,12 @@ plugins {
 }
 
 val gitCommitHashProvider = providers.exec {
-    commandLine("wsl", "git", "rev-parse", "--short", "HEAD")
+    commandLine("git", "rev-parse", "--short", "HEAD")
     workingDir = rootProject.rootDir
 }.standardOutput.asText!!
 
 val gitCommitDateProvider = providers.exec {
-    commandLine("wsl", "git", "log", "-1", "--format=%cd", "--date=format:%y%m%d")
+    commandLine("git log -1 --format=%cd --date=format:%y%m%d".split(' '))
     workingDir = rootProject.rootDir
 }.standardOutput.asText!!
 
