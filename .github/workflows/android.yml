@@ -1,7 +1,10 @@
-name: Android CI TW02
+name: Android CI
 
 on:
-  workflow_dispatch:
+  push:
+    branches:  [ "tw02" ]
+  schedule:
+    - cron: '0 0 * * *'
 
 jobs:
   build:
