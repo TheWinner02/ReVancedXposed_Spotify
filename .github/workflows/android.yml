@@ -1,10 +1,7 @@
 name: Android CI
 
 on:
-  push:
-    branches: [ "main" ]
-  schedule:
-    - cron: '0 0 * * *'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -47,6 +44,6 @@ jobs:
         cd app/build/outputs/apk/universal/release/
         mv app-universal-release.apk ReVancedXposedFESpotify-${GIT_COMMIT_DATE}.apk
         gh release delete autobuild --yes || true
-        gh release create autobuild ReVancedXposedFESpotify-${GIT_COMMIT_DATE}.apk --latest --title "Build ${GIT_COMMIT_DATE}" --notes "Commit ${GIT_DESCRIBE}. The package name and signature of this build are different every day. You don't have to reinstall it every day."
+        gh release create autobuild ReVancedXposedFESpotify-${GIT_COMMIT_DATE}.apk --draft --title "Build ${GIT_COMMIT_DATE}" --notes "Commit ${GIT_DESCRIBE}. TEST BUILD."
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
