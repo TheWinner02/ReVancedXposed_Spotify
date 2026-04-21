@@ -128,6 +128,10 @@ object Spoof {
         // 7. Deep Spoof (Mappe e Protobuf dinamici)
         runCatching {
             val mapMethods = asMethodList(Fingerprints.loginMapFingerprint(bridge))
+            XposedBridge.log("DEBUG: Trovati ${mapMethods.size} metodi Map potenziali") // QUESTO LOG È CRUCIALE
+            if (mapMethods.isEmpty()) {
+                XposedBridge.log("SPOOF ALERT: Fingerprint loginMap non ha trovato nulla!")
+            }
             XposedBridge.log("SPOOF [DEEP]: Patching di ${mapMethods.size} potenziali punti di leak (Map/Proto)")
             mapMethods.forEach { mData ->
                 runCatching {
