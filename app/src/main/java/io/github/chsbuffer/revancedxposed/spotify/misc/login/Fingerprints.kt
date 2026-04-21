@@ -10,8 +10,7 @@ import java.lang.reflect.Modifier
 
 object Fingerprints {
 
-    // 1. CLIENT ID (Quello che mancava)
-    // Cerca il metodo setter che imposta l'ID del client (fondamentale per il login iOS)
+    // 1. CLIENT ID
     val setClientIdFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
             name = "setClientId"
@@ -19,7 +18,7 @@ object Fingerprints {
         }
     }
 
-    // 2. USER AGENT (Backup)
+    // 2. USER AGENT
     val setUserAgentFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
             name = "setDefaultHTTPUserAgent"
@@ -27,12 +26,15 @@ object Fingerprints {
         }
     }
 
-    // 3. MAPPA DI LOGIN (Il "tuttofare")
+    // 3. MAPPA DI LOGIN
+    // Usiamo una stringa specifica per aiutarlo a essere più unico,
+    // ma manteniamo la struttura che piace al tuo compilatore.
     val loginMapFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
             parameters("Ljava/util/Map;")
-            accessFlags(AccessFlags.PUBLIC)
             returnType = "V"
+            // Aggiungiamo i modificatori per restringere il campo dai 12 risultati
+            accessFlags(AccessFlags.PUBLIC)
         }
     }
 
@@ -49,7 +51,6 @@ object Fingerprints {
         classMatcher { descriptor = "Lcom/spotify/pses/v1/proto/DeviceInformation;" }
         methodMatcher {
             parameters("Ljava/lang/String;")
-            modifiers = Modifier.PUBLIC
         }
     }
 

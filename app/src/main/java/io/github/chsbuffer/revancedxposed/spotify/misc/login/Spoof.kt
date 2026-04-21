@@ -49,12 +49,12 @@ object Spoof {
                     applyDexKitHooks(bridge, classLoader)
                 }
             }.onFailure {
-                XposedBridge.log("SPOOF [FATAL]: Errore DexKit: ${it.message}")
+                XposedBridge.log("SPOOF [FATAL]: Errore DexKit critico: ${it.message}")
             }
         }
     }
 
-    // --- HOOK DIRETTI (Veloci) ---
+    // --- HOOK DIRETTI ---
 
     private fun applySystemSpoof() {
         runCatching {
@@ -99,10 +99,11 @@ object Spoof {
             XposedBridge.hookAllMethods(okHttpClientClass, "newCall", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val request = param.args[0] as okhttp3.Request
-                    val headersBuilder = request.headers.newBuilder()
-                    headersBuilder["User-Agent"] = IOS_UA
-                    headersBuilder["App-Platform"] = "ios"
-                    param.args[0] = request.newBuilder().headers(headersBuilder.build()).build()
+                    val headers = request.headers.newBuilder()
+                        .set("User-Agent", IOS_UA)
+                        .set("App-Platform", "ios")
+                        .build()
+                    param.args[0] = request.newBuilder().headers(headers).build()
                 }
             })
         }
@@ -141,8 +142,8 @@ object Spoof {
     private fun applyDexKitHooks(bridge: DexKitBridge, classLoader: ClassLoader) {
 
         // 1. UA
-        asMethodList(Fingerprints.setUserAgentFingerprint(bridge)).forEach { mData ->
-            runCatching {
+        runCatching {
+            asMethodList(Fingerprints.setUserAgentFingerprint(bridge)).forEach { mData ->
                 XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_UA }
                 })
@@ -150,32 +151,40 @@ object Spoof {
         }
 
         // 2. CLIENT ID
-        asMethodList(Fingerprints.setClientIdFingerprint(bridge)).forEach { mData ->
-            runCatching {
+        runCatching {
+            asMethodList(Fingerprints.setClientIdFingerprint(bridge)).forEach { mData ->
                 XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_CLIENT_ID }
                 })
             }
         }
 
-        // 3. MAPS (Il colpevole dei 12 risultati)
-        asMethodList(Fingerprints.loginMapFingerprint(bridge)).forEach { mData ->
-            runCatching {
-                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                    @Suppress("UNCHECKED_CAST")
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        val map = param.args?.getOrNull(0) as? MutableMap<String, Any?> ?: return
-                        map["platform"] = "ios"
-                        map["App-Platform"] = "ios"
-                        map["os"] = "ios"
-                    }
-                })
+        // 3. MAPS (Sicuro contro 12 risultati e ClassCastException)
+        runCatching {
+            val mapResults = Fingerprints.loginMapFingerprint(bridge)
+            asMethodList(mapResults).forEach { mData ->
+                runCatching {
+                    XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            val arg = param.args?.getOrNull(0)
+                            if (arg is MutableMap<*, *>) {
+                                @Suppress("UNCHECKED_CAST")
+                                val map = arg as MutableMap<String, Any?>
+                                if (map.containsKey("platform") || map.containsKey("os")) {
+                                    map["platform"] = "ios"
+                                    map["App-Platform"] = "ios"
+                                    map["os"] = "ios"
+                                }
+                            }
+                        }
+                    })
+                }
             }
-        }
+        }.onFailure { XposedBridge.log("SPOOF [DEX]: Errore durante hook Mappe (probabile limite 12)") }
 
         // 4. PROTO
-        asMethodList(Fingerprints.clientInfoFingerprint(bridge)).forEach { mData ->
-            runCatching {
+        runCatching {
+            asMethodList(Fingerprints.clientInfoFingerprint(bridge)).forEach { mData ->
                 XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = "ios" }
                 })
@@ -183,8 +192,8 @@ object Spoof {
         }
 
         // 5. DEVICE INFO
-        asMethodList(Fingerprints.deviceInfoFingerprint(bridge)).forEach { mData ->
-            runCatching {
+        runCatching {
+            asMethodList(Fingerprints.deviceInfoFingerprint(bridge)).forEach { mData ->
                 XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_SYSTEM }
                 })
@@ -192,8 +201,8 @@ object Spoof {
         }
 
         // 6. HARDWARE
-        Fingerprints.findClientDataMethods(bridge, "getHardwareMachine").forEach { mData ->
-            runCatching {
+        runCatching {
+            Fingerprints.findClientDataMethods(bridge, "getHardwareMachine").forEach { mData ->
                 XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) { param.result = IOS_HARDWARE }
                 })
