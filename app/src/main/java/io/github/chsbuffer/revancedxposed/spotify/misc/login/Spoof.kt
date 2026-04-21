@@ -5,7 +5,6 @@ import android.content.pm.PackageInfo
 import android.content.pm.Signature
 import android.os.Build
 import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import io.github.chsbuffer.revancedxposed.*
@@ -129,50 +128,46 @@ object Spoof {
 
     private fun applyHooks(bridge: DexKitBridge, classLoader: ClassLoader) {
 
-        // --- A. ACCESS POINT ---
-        val accessPointFunc = Fingerprints.setAccessPointFingerprint
-        val accessPointMethod = runCatching {
-            accessPointFunc(bridge).getMethodInstance(classLoader)
+        // --- 1. RICERCA DINAMICA DELLA CLASSE DI CONFIGURAZIONE ---
+        val configClass: Class<*>? = runCatching {
+            val methodDataList = bridge.findMethod {
+                matcher {
+                    name = "setDefaultHTTPUserAgent"
+                    parameters("java.lang.String")
+                }
+            }
+            if (methodDataList.isNotEmpty()) {
+                methodDataList[0].getMethodInstance(classLoader).declaringClass
+            } else null
         }.getOrNull()
 
-        if (accessPointMethod != null) {
-            XposedBridge.hookMethod(accessPointMethod, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    param.args[0] = "http://127.0.0.1:$proxyPort"
-                    XposedBridge.log("SPOOF: AccessPoint patchato (DexKit)")
-                }
-            })
-        } else {
-            runCatching {
-                val configClass = XposedHelpers.findClass("com.spotify.connectivity.ApplicationScopeConfiguration", classLoader)
-                XposedHelpers.findAndHookMethod(configClass, "setAccessPoint", String::class.java, object : XC_MethodHook() {
+        if (configClass != null) {
+            XposedBridge.log("SPOOF: Trovata classe Config: ${configClass.name}")
+
+            // A. Access Point (Cerchiamo il metodo nella classe trovata)
+            val apMethod = configClass.declaredMethods.find { m ->
+                m.parameterTypes.size == 1 &&
+                        m.parameterTypes[0] == String::class.java &&
+                        (m.name == "setAccessPoint" || m.name.contains("AccessPoint", true))
+            }
+
+            apMethod?.let { method ->
+                XposedBridge.hookMethod(method, object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         param.args[0] = "http://127.0.0.1:$proxyPort"
-                        XposedBridge.log("SPOOF: AccessPoint patchato (Fallback Class)")
+                        XposedBridge.log("SPOOF: AccessPoint patchato su ${method.name}")
                     }
                 })
-            }.onFailure { XposedBridge.log("SPOOF ERROR: AccessPoint introvabile") }
-        }
+            } ?: XposedBridge.log("SPOOF ERROR: Metodo AccessPoint non trovato")
 
-        // --- B & C. CLIENT ID & USER AGENT ---
-        runCatching {
-            Fingerprints.setClientIdFingerprint(bridge).getMethodInstance(classLoader).hookMethod {
-                before { param: MethodHookParam -> param.args[0] = IOS_CLIENT_ID }
-            }
-            Fingerprints.setUserAgentFingerprint(bridge).getMethodInstance(classLoader).hookMethod {
-                before { param: MethodHookParam -> param.args[0] = IOS_UA }
-            }
-            XposedBridge.log("SPOOF: ClientID e UserAgent patchati (DexKit)")
-        }.onFailure {
+            // B & C. Client ID & User Agent
             runCatching {
-                val configClass = XposedHelpers.findClass("com.spotify.connectivity.ApplicationScopeConfiguration", classLoader)
                 XposedHelpers.findAndHookMethod(configClass, "setClientId", String::class.java, object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_CLIENT_ID }
                 })
                 XposedHelpers.findAndHookMethod(configClass, "setDefaultHTTPUserAgent", String::class.java, object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_UA }
                 })
-                XposedBridge.log("SPOOF: ClientID/UA patchati (Fallback Class)")
             }
         }
 
@@ -184,12 +179,12 @@ object Spoof {
         )
 
         targets.forEach { (type: String, value: String) ->
+            // Specifichiamo il tipo esplicito della lista per evitare Unresolved reference 'isEmpty'
             val methods: List<org.luckypray.dexkit.result.MethodData> = Fingerprints.findClientDataMethods(bridge, type)
-            if (methods.isEmpty()) {
-                XposedBridge.log("SPOOF DEBUG: Nessun metodo trovato per $type")
-            } else {
+
+            if (methods.isNotEmpty()) {
                 XposedBridge.log("SPOOF DEBUG: Patcho ${methods.size} metodi per $type")
-                methods.forEach { mData ->
+                methods.forEach { mData: org.luckypray.dexkit.result.MethodData ->
                     runCatching {
                         val method = mData.getMethodInstance(classLoader)
                         XposedBridge.hookMethod(method, de.robv.android.xposed.XC_MethodReplacement.returnConstant(value))
@@ -200,29 +195,30 @@ object Spoof {
 
         // --- D. INTEGRITY BYPASS ---
         runCatching {
-            Fingerprints.runIntegrityVerificationFingerprint(bridge).getMethodInstance(classLoader).hookMethod {
-                replace {
-                    XposedBridge.log("SPOOF: Integrity bypass attivo")
-                    null
+            val integrityMethod = Fingerprints.runIntegrityVerificationFingerprint(bridge).getMethodInstance(classLoader)
+            XposedBridge.hookMethod(integrityMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    param.result = null
+                    XposedBridge.log("SPOOF: Integrity bypass eseguito")
                 }
-            }
-        }.onFailure { XposedBridge.log("SPOOF ERROR: Integrity Fingerprint non trovato") }
+            })
+        }
 
         // --- E. PLATFORM SPOOF ---
         runCatching {
-            // Qui invochiamo la funzione passandogli il bridge per ottenere il risultato
-            val platformFunc = Fingerprints.loginClientPlatformFingerprint
+            // Specifichiamo il tipo per l'invocazione della funzione fingerprint
+            val platformFunc: FindMethodFunc = Fingerprints.loginClientPlatformFingerprint
             val platformMethod = platformFunc(bridge).getMethodInstance(classLoader)
 
-            platformMethod.hookMethod {
-                after { param: MethodHookParam ->
+            XposedBridge.hookMethod(platformMethod, object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
                     if (param.result == "android") {
                         param.result = "ios"
                         XposedBridge.log("SPOOF DEBUG: Platform convertita android -> ios")
                     }
                 }
-            }
-        }.onFailure { XposedBridge.log("SPOOF ERROR: Platform Fingerprint non trovato") }
+            })
+        }.onFailure { XposedBridge.log("SPOOF ERROR: Platform hook fallito") }
     }
 
     private fun applySignatureHook(classLoader: ClassLoader) {

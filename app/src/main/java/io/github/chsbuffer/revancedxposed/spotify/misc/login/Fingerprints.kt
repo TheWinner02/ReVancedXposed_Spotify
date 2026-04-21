@@ -32,9 +32,10 @@ object Fingerprints {
     // 3. ACCESS POINT (Risolve SPOOF ERROR: Fingerprint AccessPoint non trovato)
     val setAccessPointFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
+            // Cerchiamo un metodo che accetta una String e ha a che fare con la rete
+            // Spesso il nome è 'setAccessPoint' ma potrebbe essere offuscato
+            usingStrings("accesspoint", "http://")
             parameters("Ljava/lang/String;")
-            // Cerchiamo il metodo che usa la struttura URL di Spotify
-            usingStrings("http://", "https://", "accesspoint")
         }
     }
 
