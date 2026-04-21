@@ -31,47 +31,36 @@ object Spoof {
 
     @SuppressLint("UnsafeDynamicallyLoadedCode")
     fun init(classLoader: ClassLoader, apkPath: String, moduleApkPath: String) {
-        XposedBridge.log("SPOOF [INIT]: Avvio strategia iOS Totale")
+        XposedBridge.log("SPOOF [INIT]: Avvio Strategia Avanzata")
 
+        // 1. Hook di Sistema Immediati
         applySystemSpoof()
         applySignatureHook(classLoader)
-        applyGlobalConfigSpoof(classLoader)
         applyNativeHttpSpoof(classLoader)
-        applyOkHttpSpoof(classLoader)
-        applyUltimateProtobufSpoof(classLoader)
 
+        // 2. Task in background per DexKit e Deep Spoof
         thread {
+            Thread.sleep(2000) // Fondamentale per lasciare che l'app si calmi
             runCatching {
                 val arch = if (android.os.Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
                 val libPath = "$moduleApkPath!/lib/$arch/libdexkit.so"
                 System.load(libPath)
+
                 DexKitBridge.create(apkPath).use { bridge ->
-                    applyDexKitHooks(bridge, classLoader)
+                    applyDexKitAndDeepHooks(bridge, classLoader)
                 }
             }.onFailure {
-                XposedBridge.log("SPOOF [FATAL]: Errore DexKit critico: ${it.message}")
+                XposedBridge.log("SPOOF [FATAL]: Errore durante l'inizializzazione core: ${it.message}")
             }
         }
     }
-
-    // --- HOOK DIRETTI ---
 
     private fun applySystemSpoof() {
         runCatching {
             XposedHelpers.setStaticObjectField(Build::class.java, "MODEL", IOS_HARDWARE)
             XposedHelpers.setStaticObjectField(Build::class.java, "MANUFACTURER", "Apple")
             XposedHelpers.setStaticObjectField(Build::class.java, "BRAND", "apple")
-            XposedHelpers.setStaticObjectField(Build::class.java, "DEVICE", IOS_HARDWARE)
             XposedHelpers.setStaticObjectField(Build.VERSION::class.java, "RELEASE", IOS_SYSTEM)
-        }
-    }
-
-    private fun applyGlobalConfigSpoof(cl: ClassLoader) {
-        runCatching {
-            val configClass = cl.loadClass("com.spotify.connectivity.ApplicationScopeConfiguration")
-            XposedHelpers.findAndHookMethod(configClass, "setDefaultHTTPUserAgent", String::class.java, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_UA }
-            })
         }
     }
 
@@ -79,52 +68,93 @@ object Spoof {
         runCatching {
             val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
             XposedBridge.hookAllMethods(httpConnectionImpl, "send", object : XC_MethodHook() {
-                @Suppress("UNCHECKED_CAST")
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val req = param.args[0] ?: return
-                    val oldUrl = XposedHelpers.getObjectField(req, "url") as String
-                    XposedHelpers.setObjectField(req, "url", oldUrl.replace("platform=android", "platform=ios").replace("os=android", "os=ios"))
-                    val headers = XposedHelpers.getObjectField(req, "headers") as MutableMap<String, String>
-                    headers["User-Agent"] = IOS_UA
-                    headers["App-Platform"] = "ios"
-                    headers["X-Client-Id"] = IOS_CLIENT_ID
+                    runCatching {
+                        val url = XposedHelpers.getObjectField(req, "url") as String
+                        // Forziamo URL iOS
+                        if (url.contains("platform=android")) {
+                            XposedHelpers.setObjectField(req, "url", url.replace("platform=android", "platform=ios"))
+                        }
+
+                        // Hook degli Header (Riflessione profonda per trovare la mappa)
+                        val headersField = req.javaClass.declaredFields.find { it.type == Map::class.java || it.type.name.contains("headers", true) }
+                        headersField?.let {
+                            it.isAccessible = true
+                            val map = it.get(req) as? MutableMap<String, String>
+                            map?.let { m ->
+                                m["User-Agent"] = IOS_UA
+                                m["App-Platform"] = "ios"
+                                m["X-Client-Id"] = IOS_CLIENT_ID
+                            }
+                        }
+                    }
                 }
             })
         }
     }
 
-    private fun applyOkHttpSpoof(cl: ClassLoader) {
-        runCatching {
-            val okHttpClientClass = cl.loadClass("okhttp3.OkHttpClient")
-            XposedBridge.hookAllMethods(okHttpClientClass, "newCall", object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val request = param.args[0] as okhttp3.Request
-                    val headers = request.headers.newBuilder()
-                        .set("User-Agent", IOS_UA)
-                        .set("App-Platform", "ios")
-                        .build()
-                    param.args[0] = request.newBuilder().headers(headers).build()
-                }
-            })
-        }
-    }
+    private fun applyDexKitAndDeepHooks(bridge: DexKitBridge, cl: ClassLoader) {
+        XposedBridge.log("SPOOF [DEX]: Inizio Scansione")
 
-    private fun applyUltimateProtobufSpoof(cl: ClassLoader) {
+        // Hook per Mappe e Protobuf Dinamici (Il cuore del successo)
         runCatching {
-            val clientInfoClass = cl.loadClass("com.spotify.signup.signup.v2.proto.ClientInfo")
-            XposedBridge.hookAllMethods(clientInfoClass, "s", object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    if (param.args.getOrNull(0) is String) param.args[0] = "ios"
+            val mapMethods = asMethodList(Fingerprints.loginMapFingerprint(bridge))
+            mapMethods.forEach { mData ->
+                runCatching {
+                    XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            val arg = param.args?.getOrNull(0) ?: return
+
+                            // A: Gestione Mappe (Classico)
+                            if (arg is MutableMap<*, *>) {
+                                @Suppress("UNCHECKED_CAST")
+                                val map = arg as MutableMap<String, Any?>
+                                if (map.containsKey("platform") || map.containsKey("App-Platform")) {
+                                    map["platform"] = "ios"
+                                    map["App-Platform"] = "ios"
+                                    map["os"] = "ios"
+                                }
+                            }
+                            // B: Gestione Protobuf (Riflessione sui campi interni)
+                            else if (arg.javaClass.name.startsWith("com.spotify")) {
+                                arg.javaClass.declaredFields.forEach { field ->
+                                    if (field.name == "platform_" || field.name == "os_") {
+                                        runCatching {
+                                            field.isAccessible = true
+                                            if (field.type == String::class.java) field.set(arg, "ios")
+                                            else if (field.type == Int::class.javaPrimitiveType) field.set(arg, 1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    })
                 }
-            })
+            }
         }
+
+        // Hook per ClientID e UA (DexKit)
+        listOf(
+            Fingerprints.setClientIdFingerprint(bridge) to IOS_CLIENT_ID,
+            Fingerprints.setUserAgentFingerprint(bridge) to IOS_UA
+        ).forEach { (res, value) ->
+            asMethodList(res).forEach { m ->
+                runCatching {
+                    XposedBridge.hookMethod(m.getMethodInstance(cl), object : XC_MethodHook() {
+                        override fun beforeHookedMethod(p: MethodHookParam) { p.args[0] = value }
+                    })
+                }
+            }
+        }
+
+        XposedBridge.log("SPOOF [DEX]: Scansione completata.")
     }
 
     private fun applySignatureHook(cl: ClassLoader) {
         runCatching {
             val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", cl)
             XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
-                @Suppress("DEPRECATION")
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val pkg = param.args[0] as? String ?: return
                     if (pkg.contains("spotify")) {
@@ -135,81 +165,6 @@ object Spoof {
                 }
             })
         }
-    }
-
-    // --- HOOK DINAMICI ---
-
-    private fun applyDexKitHooks(bridge: DexKitBridge, classLoader: ClassLoader) {
-
-        // 1. UA
-        runCatching {
-            asMethodList(Fingerprints.setUserAgentFingerprint(bridge)).forEach { mData ->
-                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_UA }
-                })
-            }
-        }
-
-        // 2. CLIENT ID
-        runCatching {
-            asMethodList(Fingerprints.setClientIdFingerprint(bridge)).forEach { mData ->
-                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_CLIENT_ID }
-                })
-            }
-        }
-
-        // 3. MAPS (Sicuro contro 12 risultati e ClassCastException)
-        runCatching {
-            val mapResults = Fingerprints.loginMapFingerprint(bridge)
-            asMethodList(mapResults).forEach { mData ->
-                runCatching {
-                    XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                        override fun beforeHookedMethod(param: MethodHookParam) {
-                            val arg = param.args?.getOrNull(0)
-                            if (arg is MutableMap<*, *>) {
-                                @Suppress("UNCHECKED_CAST")
-                                val map = arg as MutableMap<String, Any?>
-                                if (map.containsKey("platform") || map.containsKey("os")) {
-                                    map["platform"] = "ios"
-                                    map["App-Platform"] = "ios"
-                                    map["os"] = "ios"
-                                }
-                            }
-                        }
-                    })
-                }
-            }
-        }.onFailure { XposedBridge.log("SPOOF [DEX]: Errore durante hook Mappe (probabile limite 12)") }
-
-        // 4. PROTO
-        runCatching {
-            asMethodList(Fingerprints.clientInfoFingerprint(bridge)).forEach { mData ->
-                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = "ios" }
-                })
-            }
-        }
-
-        // 5. DEVICE INFO
-        runCatching {
-            asMethodList(Fingerprints.deviceInfoFingerprint(bridge)).forEach { mData ->
-                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_SYSTEM }
-                })
-            }
-        }
-
-        // 6. HARDWARE
-        runCatching {
-            Fingerprints.findClientDataMethods(bridge, "getHardwareMachine").forEach { mData ->
-                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) { param.result = IOS_HARDWARE }
-                })
-            }
-        }
-
-        XposedBridge.log("SPOOF [DEXKIT]: Tutti gli hook dinamici sono stati processati.")
     }
 
     private fun hexToBytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
