@@ -131,6 +131,7 @@ object Spoof {
         // Hook per ClientInfo (Il passaporto del login)
         runCatching {
             val clientInfoMethods = asMethodList(Fingerprints.clientInfoFingerprint(bridge))
+            XposedBridge.log("SPOOF [DEBUG]: Trovati ${clientInfoMethods.size} metodi in ClientInfo")
             clientInfoMethods.forEach { mData ->
                 XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
