@@ -26,6 +26,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var startupParam: StartupParam
     lateinit var lpparam: LoadPackageParam
     lateinit var app: Application
+    var moduleApkPath: String? = null
     var targetPackageName: String? = null
     val hooksByPackage = mapOf(
         "com.spotify.music" to { SpotifyHook(app, lpparam) },
@@ -43,26 +44,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
 
-        // Agganciamoci all'onCreate dell'Application per avere un Context
-        XposedHelpers.findAndHookMethod(
-            "android.app.Application",
-            lpparam.classLoader,
-            "onCreate",
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val context = param.thisObject as android.content.Context
-
-                    // Recuperiamo il percorso del NOSTRO modulo (l'APK che contiene il codice Xposed)
-                    // Usiamo il package name del tuo modulo (controllalo nel build.gradle o manifest)
-                    val myModulePkg = "io.github.chsbuffer.revancedxposed"
-                    val moduleInfo = context.packageManager.getApplicationInfo(myModulePkg, 0)
-                    val moduleApkPath = moduleInfo.sourceDir
-
-                    // Passiamo entrambi i percorsi a Spoof
-                    Spoof.init(lpparam.classLoader, lpparam.appInfo.sourceDir, moduleApkPath)
-                }
-            }
-        )
+        Spoof.init(lpparam.classLoader, lpparam.appInfo.sourceDir, moduleApkPath!!)
 
         // --- NUOVO TRIGGER: LONG CLICK SU ICONA PROFILO ---
         XposedHelpers.findAndHookMethod(
@@ -210,6 +192,8 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     override fun initZygote(startupParam: StartupParam) {
         this.startupParam = startupParam
         XposedInit = startupParam
+        moduleApkPath = startupParam.modulePath
+
     }
 }
 

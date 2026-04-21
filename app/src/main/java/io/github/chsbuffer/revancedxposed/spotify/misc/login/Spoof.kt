@@ -32,7 +32,12 @@ object Spoof {
         applyNativeHttpSpoof(classLoader)
         val arch = if (android.os.Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
         val libPath = "$moduleApkPath!/lib/$arch/libdexkit.so"
-        runCatching { System.loadLibrary(libPath) }
+        try {
+            runCatching { System.loadLibrary(libPath) }
+            XposedBridge.log("SPOOF: DexKit caricato da $libPath")
+        } catch (e: Exception) {
+            XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${e.message}")
+        }
 
         thread {
             Thread.sleep(1000)
