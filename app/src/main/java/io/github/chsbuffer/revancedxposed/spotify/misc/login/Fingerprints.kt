@@ -88,4 +88,22 @@ object Fingerprints {
             }
         }
     }
+
+    // 9.Fingerprint per il Protobuf di Login (ClientInfo)
+    val clientInfoFingerprint: FindMethodFunc = fingerprint {
+        classMatcher { descriptor = "Lcom/spotify/signup/signup/v2/proto/ClientInfo;" }
+        methodMatcher {
+            name = "setPlatform"
+            parameters("Ljava/lang/String;")
+        }
+    }
+
+    // 10.Fingerprint per DeviceInformation (Dati sessione)
+    val deviceInfoFingerprint: FindMethodFunc = fingerprint {
+        classMatcher { descriptor = "Lcom/spotify/pses/v1/proto/DeviceInformation;" }
+        methodMatcher {
+            name = "setOsVersion"
+            parameters("Ljava/lang/String;")
+        }
+    }
 }

@@ -125,6 +125,39 @@ object Spoof {
             }
         }
 
+        // Hook per ClientInfo (Il passaporto del login)
+        runCatching {
+            val clientInfoMethods = asMethodList(Fingerprints.clientInfoFingerprint(bridge))
+            clientInfoMethods.forEach { mData ->
+                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        when (param.method.name) {
+                            "setPlatform" -> param.args[0] = "ios"
+                            "setDeviceModel" -> param.args[0] = IOS_HARDWARE
+                            "setOsVersion" -> param.args[0] = IOS_SYSTEM
+                        }
+                        XposedBridge.log("SPOOF [PROTO]: ClientInfo modificato -> ${param.method.name}")
+                    }
+                })
+            }
+        }
+
+        // Hook per DeviceInformation (Dati sessione)
+        runCatching {
+            val deviceInfoMethods = asMethodList(Fingerprints.deviceInfoFingerprint(bridge))
+            deviceInfoMethods.forEach { mData ->
+                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        when (param.method.name) {
+                            "setOsVersion" -> param.args[0] = IOS_SYSTEM
+                            "setDeviceModel" -> param.args[0] = IOS_HARDWARE
+                        }
+                        XposedBridge.log("SPOOF [PROTO]: DeviceInformation aggiornato")
+                    }
+                })
+            }
+        }
+
         // 7. Deep Spoof (Mappe e Protobuf dinamici)
         runCatching {
             val mapMethods = asMethodList(Fingerprints.loginMapFingerprint(bridge))
