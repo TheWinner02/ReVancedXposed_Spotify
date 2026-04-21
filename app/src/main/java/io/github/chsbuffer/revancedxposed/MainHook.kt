@@ -1,5 +1,6 @@
 package io.github.chsbuffer.revancedxposed
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
 import android.view.View
@@ -21,6 +22,7 @@ import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.Spoof
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.setupIntegratedLogin
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.StealthMode
+import androidx.core.view.isNotEmpty
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var startupParam: StartupParam
@@ -53,6 +55,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             "onPostCreate", // Usiamo onPostCreate per essere sicuri che la UI sia pronta
             android.os.Bundle::class.java,
             object : XC_MethodHook() {
+                @SuppressLint("DiscouragedApi")
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val activity = param.thisObject as Activity
                     if (!activity.javaClass.name.contains("MainActivity")) return
@@ -146,7 +149,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         view.setOnLongClickListener {
             // Se la view cliccata è un contenitore (ViewGroup), cerchiamo l'immagine dentro
-            val realView = if (it is android.view.ViewGroup && it.childCount > 0) {
+            val realView = if (it is ViewGroup && it.isNotEmpty()) {
                 it.getChildAt(0)
             } else {
                 it

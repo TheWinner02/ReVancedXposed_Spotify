@@ -50,22 +50,15 @@ object Fingerprints {
         methodMatcher {
             accessFlags(AccessFlags.PUBLIC, AccessFlags.FINAL)
             returns("V")
-            opcodes(
-                Opcode.CHECK_CAST,
-                Opcode.INVOKE_VIRTUAL,
-                Opcode.INVOKE_STATIC,
-                Opcode.MOVE_RESULT_OBJECT,
-                Opcode.INVOKE_VIRTUAL,
-                Opcode.MOVE_RESULT,
-                Opcode.IF_EQ
-            )
+            opcodes(Opcode.CHECK_CAST, Opcode.INVOKE_VIRTUAL, Opcode.INVOKE_STATIC, Opcode.MOVE_RESULT_OBJECT, Opcode.INVOKE_VIRTUAL, Opcode.MOVE_RESULT, Opcode.IF_EQ)
         }
     }
 
     // 6. ORBIT LIBRARY LOAD
+    // Basato su grep: trovato in p/a54.smali [cite: 1]
     val orbitLibraryFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
-            usingStrings("orbit-jni-spotify")
+            usingStrings("liborbit-jni-spotify.so")
         }
     }
 

@@ -29,7 +29,6 @@ object Spoof {
 
     private var proxyPort: Int = 0
 
-    // Helper per gestire i risultati misti (Singolo o Lista) di DexKit
     @Suppress("UNCHECKED_CAST")
     private fun asMethodList(result: Any?): List<MethodData> {
         return when (result) {
@@ -41,7 +40,7 @@ object Spoof {
 
     @SuppressLint("UnsafeDynamicallyLoadedCode")
     fun init(classLoader: ClassLoader, apkPath: String, moduleApkPath: String) {
-        XposedBridge.log("SPOOF: Inizializzazione...")
+        XposedBridge.log("SPOOF [INIT]: Inizializzazione modulo...")
         proxyPort = startLocalProxy()
 
         applyNativeHttpSpoof(classLoader)
@@ -49,100 +48,119 @@ object Spoof {
         applySignatureHook(classLoader)
 
         thread {
-            Thread.sleep(1000)
+            Thread.sleep(1500) // Leggero delay per stabilità DexKit
             runCatching {
                 val arch = if (android.os.Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
                 val libPath = "$moduleApkPath!/lib/$arch/libdexkit.so"
                 System.load(libPath)
+                XposedBridge.log("SPOOF [DEXKIT]: Libreria $arch caricata")
 
                 DexKitBridge.create(apkPath).use { bridge ->
                     applyHooks(bridge, classLoader)
                 }
-            }.onFailure { XposedBridge.log("SPOOF FATAL: DexKit Init Error: ${it.message}") }
+            }.onFailure { XposedBridge.log("SPOOF [FATAL]: Errore DexKit: ${it.message}") }
         }
     }
 
     private fun applyHooks(bridge: DexKitBridge, classLoader: ClassLoader) {
-        XposedBridge.log("SPOOF: Applicazione hook dinamici...")
+        XposedBridge.log("SPOOF [CORE]: Inizio scansione e hook dinamici...")
 
-        // 1. Client ID
-        runCatching {
-            asMethodList(Fingerprints.setClientIdFingerprint(bridge)).forEach { mData ->
-                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_CLIENT_ID }
-                })
+        // 1, 2, 3. Configurazione Base
+        val configHooks = mapOf(
+            Fingerprints.setClientIdFingerprint to IOS_CLIENT_ID,
+            Fingerprints.setUserAgentFingerprint to IOS_UA,
+            Fingerprints.setAccessPointFingerprint to "http://127.0.0.1:$proxyPort"
+        )
+
+        configHooks.forEach { (fingerprint, value) ->
+            runCatching {
+                val methods = asMethodList(fingerprint(bridge))
+                methods.forEach { mData ->
+                    XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            param.args[0] = value
+                            XposedBridge.log("SPOOF [CONFIG]: ${mData.name} -> $value")
+                        }
+                    })
+                }
+                if (methods.isNotEmpty()) XposedBridge.log("SPOOF [DEXKIT]: Hooked ${methods.size} metodi per config")
             }
         }
 
-        // 2. User Agent
+        // 4. Platform Getter
         runCatching {
-            asMethodList(Fingerprints.setUserAgentFingerprint(bridge)).forEach { mData ->
-                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) { param.args[0] = IOS_UA }
-                })
-            }
-        }
-
-        // 3. Access Point (Proxy)
-        runCatching {
-            asMethodList(Fingerprints.setAccessPointFingerprint(bridge)).forEach { mData ->
-                XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        param.args[0] = "http://127.0.0.1:$proxyPort"
-                    }
-                })
-            }
-        }
-
-        // 4. Platform Spoof (Getter)
-        runCatching {
-            val methods = asMethodList(Fingerprints.loginClientPlatformFingerprint(bridge))
-            methods.forEach { mData ->
+            val pMethods = asMethodList(Fingerprints.loginClientPlatformFingerprint(bridge))
+            pMethods.forEach { mData ->
                 XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        if (param.result == "android") param.result = "ios"
+                        if (param.result == "android") {
+                            param.result = "ios"
+                            XposedBridge.log("SPOOF [GETTER]: Forzato 'ios' su getter platform")
+                        }
                     }
                 })
             }
-            XposedBridge.log("SPOOF: Patchati ${methods.size} getter platform")
+            XposedBridge.log("SPOOF [DEXKIT]: Hooked ${pMethods.size} getter platform")
         }
 
         // 5. Integrity Bypass
         runCatching {
-            val m = Fingerprints.runIntegrityVerificationFingerprint(bridge).getMethodInstance(classLoader)
-            XposedBridge.hookMethod(m, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) { param.result = null }
+            val integrityMethod = Fingerprints.runIntegrityVerificationFingerprint(bridge).getMethodInstance(classLoader)
+            XposedBridge.hookMethod(integrityMethod, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    param.result = null
+                    XposedBridge.log("SPOOF [BYPASS]: Metodo integrità bypassato")
+                }
             })
-            XposedBridge.log("SPOOF: Integrity Bypass attivo")
         }
 
-        // 6. Orbit Library Load Trigger
+        // 6. Orbit Native Trigger
         runCatching {
             asMethodList(Fingerprints.orbitLibraryFingerprint(bridge)).forEach { mData ->
                 XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) { XposedBridge.log("SPOOF: Orbit Native Logic caricata") }
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        XposedBridge.log("SPOOF [ORBIT]: Caricamento Orbit JNI rilevato in ${mData.name}")
+                    }
                 })
             }
         }
 
-        // 7. Deep Spoof (Maps/Protobuf)
+        // 7. Deep Spoof (Mappe e Protobuf dinamici)
         runCatching {
             val mapMethods = asMethodList(Fingerprints.loginMapFingerprint(bridge))
-            XposedBridge.log("SPOOF: Deep Spoof su ${mapMethods.size} metodi")
+            XposedBridge.log("SPOOF [DEEP]: Patching di ${mapMethods.size} potenziali punti di leak (Map/Proto)")
             mapMethods.forEach { mData ->
                 runCatching {
                     XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
                         override fun beforeHookedMethod(param: MethodHookParam) {
                             val arg = param.args?.getOrNull(0) ?: return
+
+                            // Gestione Mappe
                             if (arg is MutableMap<*, *>) {
                                 @Suppress("UNCHECKED_CAST")
                                 val map = arg as MutableMap<String, Any?>
                                 if (map["platform"] == "android" || map["App-Platform"] == "android") {
                                     map["platform"] = "ios"
                                     map["App-Platform"] = "ios"
+                                    XposedBridge.log("SPOOF [MAP]: Corretto valore platform in una Map")
                                 }
-                            } else if (arg.javaClass.name.startsWith("com.spotify")) {
-                                runCatching { XposedHelpers.setObjectField(arg, "platform_", "ios") }
+                            }
+                            // Gestione Protobuf (basato sui tuoi grep)
+                            else if (arg.javaClass.name.startsWith("com.spotify")) {
+                                arg.javaClass.declaredFields.forEach { field ->
+                                    if (field.name == "platform_") {
+                                        runCatching {
+                                            field.isAccessible = true
+                                            val oldVal = field.get(arg)
+                                            if (field.type == String::class.java) {
+                                                field.set(arg, "ios")
+                                            } else {
+                                                field.set(arg, 1) // ID iOS per tipi Int
+                                            }
+                                            XposedBridge.log("SPOOF [PROTO]: Patchato platform_ in ${arg.javaClass.simpleName} ($oldVal -> ios)")
+                                        }
+                                    }
+                                }
                             }
                         }
                     })
@@ -151,18 +169,21 @@ object Spoof {
         }
 
         // 8. Versioni e Hardware
-        listOf("getClientVersion", "getSystemVersion", "getHardwareMachine").forEach { type ->
-            val value = when(type) {
-                "getClientVersion" -> "iphone-9.0.58.558.g200011c"
-                "getSystemVersion" -> IOS_SYSTEM
-                else -> IOS_HARDWARE
-            }
-            Fingerprints.findClientDataMethods(bridge, type).forEach { mData ->
+        val vMap = mapOf(
+            "getClientVersion" to "iphone-9.0.58.558.g200011c",
+            "getSystemVersion" to IOS_SYSTEM,
+            "getHardwareMachine" to IOS_HARDWARE
+        )
+        vMap.forEach { (type, value) ->
+            val results = Fingerprints.findClientDataMethods(bridge, type)
+            results.forEach { mData ->
                 runCatching {
                     XposedBridge.hookMethod(mData.getMethodInstance(classLoader), de.robv.android.xposed.XC_MethodReplacement.returnConstant(value))
                 }
             }
+            XposedBridge.log("SPOOF [VERSION]: Patchati ${results.size} metodi per $type")
         }
+        XposedBridge.log("SPOOF [CORE]: Tutti gli hook DexKit sono pronti.")
     }
 
     private fun applySystemSpoof() {
@@ -172,9 +193,7 @@ object Spoof {
             XposedHelpers.setStaticObjectField(Build::class.java, "BRAND", "apple")
             XposedHelpers.setStaticObjectField(Build::class.java, "DEVICE", IOS_HARDWARE)
             XposedHelpers.setStaticObjectField(Build.VERSION::class.java, "RELEASE", IOS_SYSTEM)
-            XposedBridge.log("SPOOF: Build prop modificate (iPhone Mode)")
-        }.onFailure {
-            XposedBridge.log("SPOOF ERROR: Impossibile modificare Build props: ${it.message}")
+            XposedBridge.log("SPOOF [SYSTEM]: Build properties emulate (Apple/iOS)")
         }
     }
 
@@ -182,21 +201,16 @@ object Spoof {
         runCatching {
             val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
             val httpRequest = cl.loadClass("com.spotify.core.http.HttpRequest")
-
             val urlField = httpRequest.getDeclaredField("url").apply { isAccessible = true }
-            val headersField = httpRequest.declaredFields.find {
-                it.type == Map::class.java || it.type.name.contains("Headers", true)
-            }?.apply { isAccessible = true }
+            val headersField = httpRequest.declaredFields.find { it.type == Map::class.java || it.type.name.contains("Headers", true) }?.apply { isAccessible = true }
 
             XposedBridge.hookAllMethods(httpConnectionImpl, "send", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val req = param.args[0] ?: return
                     val url = urlField.get(req) as? String ?: return
 
-                    if (url.contains("login") || url.contains("auth") || url.contains("tokens") ||
-                        url.contains("identify") || url.contains("bootstrap")) {
-
-                        XposedBridge.log("SPOOF G: Intercettata chiamata nativa sensibile: $url")
+                    if (url.contains("login") || url.contains("auth") || url.contains("tokens")) {
+                        XposedBridge.log("SPOOF [NATIVE-HTTP]: Intercettata richiesta sensibile -> $url")
                         headersField?.let { field ->
                             val headers = field.get(req)
                             if (headers is MutableMap<*, *>) {
@@ -205,20 +219,18 @@ object Spoof {
                                 map["User-Agent"] = IOS_UA
                                 map["X-Spotify-Client-Platform"] = "ios"
                                 map["App-Platform"] = "ios"
-                                // XposedBridge.log("SPOOF G: Headers iOS iniettati nel traffico nativo")
+                                XposedBridge.log("SPOOF [NATIVE-HTTP]: Header iniettati correttamente")
                             }
                         }
                     }
                 }
             })
-        }.onFailure {
-            XposedBridge.log("SPOOF ERROR: NativeHttp hook fallito: ${it.message}")
         }
     }
 
-    private fun applySignatureHook(classLoader: ClassLoader) {
+    private fun applySignatureHook(cl: ClassLoader) {
         runCatching {
-            val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
+            val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", cl)
             XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val pkg = param.args[0] as? String ?: return
@@ -226,71 +238,52 @@ object Spoof {
                         val info = param.result as? PackageInfo ?: return
                         info.signatures = arrayOf(Signature(hexToBytes(SPOTIFY_SHA)))
                         param.result = info
+                        XposedBridge.log("SPOOF [SIGNATURE]: Firma Spotify falsificata per $pkg")
                     }
                 }
             })
-            XposedBridge.log("SPOOF: Signature hook applicato")
-        }.onFailure { XposedBridge.log("SPOOF ERROR: Signature hook fallito: ${it.message}") }
+        }
     }
 
-    // --- PROXY LOCALE ---
     private fun startLocalProxy(): Int {
         val server = ServerSocket(0)
         val port = server.localPort
-        thread(name = "SpoofProxyMain") {
+        XposedBridge.log("SPOOF [PROXY]: Avviato sulla porta $port")
+        thread(name = "SpoofProxy") {
             while (true) {
-                runCatching {
-                    val socket = server.accept()
-                    handleConnection(socket)
-                }
+                runCatching { handleConnection(server.accept()) }
             }
         }
         return port
     }
 
     private fun handleConnection(socket: Socket) {
-        val connId = System.currentTimeMillis().toString().takeLast(4)
         CoroutineScope(Dispatchers.IO).launch {
             runCatching {
                 val input = socket.getInputStream()
                 val out = socket.getOutputStream()
                 val reader = input.bufferedReader()
                 val firstLine = reader.readLine() ?: return@runCatching
-
                 val parts = firstLine.split(" ")
                 if (parts.size < 2) return@runCatching
-                val method = parts[0]
-                val path = parts[1]
 
-                XposedBridge.log("SPOOF PROXY [$connId]: $method -> $path")
+                XposedBridge.log("SPOOF [PROXY]: Tunneling richiesta ${parts[0]} ${parts[1]}")
 
-                val url = URL("com.spotify.music/cache/n3ptun3/cxit.uygwazdnihh.n3p/4201124421.n3ptun3!/lib/arm64-v8a/libdexkit.so$path")
+                val url = URL("https://login5.spotify.com" + parts[1])
                 val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = method
-                conn.doOutput = (method == "POST")
-
-                // Header forzati in uscita
+                conn.requestMethod = parts[0]
+                conn.doOutput = (parts[0] == "POST")
                 conn.setRequestProperty("User-Agent", IOS_UA)
-                conn.setRequestProperty("X-Client-Id", IOS_CLIENT_ID)
                 conn.setRequestProperty("App-Platform", "ios")
 
                 if (conn.doOutput) input.copyTo(conn.outputStream)
+                val responseData = if (conn.responseCode < 400) conn.inputStream.readBytes() else conn.errorStream?.readBytes() ?: ByteArray(0)
 
-                val responseCode = conn.responseCode
-                XposedBridge.log("SPOOF PROXY [$connId]: Risposta Spotify -> $responseCode")
-
-                val responseData = if (responseCode < 400) conn.inputStream.readBytes() else conn.errorStream?.readBytes() ?: ByteArray(0)
-
-                out.write("HTTP/1.1 $responseCode OK\r\n".toByteArray())
-                out.write("Content-Length: ${responseData.size}\r\n\r\n".toByteArray())
+                out.write("HTTP/1.1 ${conn.responseCode} OK\r\nContent-Length: ${responseData.size}\r\n\r\n".toByteArray())
                 out.write(responseData)
                 out.flush()
-            }.onFailure {
-                XposedBridge.log("SPOOF PROXY ERROR [$connId]: ${it.message}")
-            }.also {
-                // ASSICURA LA CHIUSURA DEL SOCKET
-                runCatching { socket.close() }
-            }
+                XposedBridge.log("SPOOF [PROXY]: Risposta ${conn.responseCode} inoltrata")
+            }.also { runCatching { socket.close() } }
         }
     }
 
