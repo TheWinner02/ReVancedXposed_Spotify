@@ -3,6 +3,7 @@ agp = "9.1.1"
 flatbuffersJava = "25.2.10"
 kotlin = "2.3.20"
 dexkit = "2.2.0"
+kotlinxCoroutinesAndroidVersion = "1.7.3"
 xposed = "82"
 annotation = "1.10.0"
 gson = "2.13.2"
@@ -16,6 +17,8 @@ material = "1.13.0"
 [libraries]
 dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }
 flatbuffers-java = { module = "com.google.flatbuffers:flatbuffers-java", version.ref = "flatbuffersJava" }
+jetbrains-kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutinesAndroidVersion" }
+kotlinx-coroutines-android-v173 = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutinesAndroidVersion" }
 xposed = { group = "de.robv.android.xposed", name = "api", version.ref = "xposed" }
 annotation = { group = "androidx.annotation", name = "annotation", version.ref = "annotation" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }

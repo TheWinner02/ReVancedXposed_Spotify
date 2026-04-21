@@ -18,7 +18,8 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
         ::SanitizeSharingLinks,
         ::UnlockPremium,
         ::LogOutPatch,
-        ::FixThirdPartyLaunchersWidgets
+        ::FixThirdPartyLaunchersWidgets,
+        ::NHB
     )
 
     // ══════════════════════════════════════════════════════

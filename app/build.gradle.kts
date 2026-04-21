@@ -108,6 +108,8 @@ dependencies {
     implementation(libs.flatbuffers.java) // dexkit dependency
     implementation(libs.annotation)
     implementation(libs.kotlinx.serialization.protobuf)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.jetbrains.kotlinx.coroutines.core)
     implementation(libs.material)
     testImplementation(kotlin("test-junit5"))
     testImplementation(libs.junit.jupiter.params)
