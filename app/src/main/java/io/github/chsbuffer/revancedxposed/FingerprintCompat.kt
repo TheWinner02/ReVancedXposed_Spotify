@@ -111,6 +111,8 @@ interface ResourceFinder {
     operator fun get(type: String, name: String): Int
 }
 
+lateinit var resourceMappings: ResourceFinder
+
 typealias FindFunc = DexKitBridge.() -> Any
 typealias FindClassFunc = DexKitBridge.() -> ClassData
 typealias FindMethodFunc = DexKitBridge.() -> MethodData
@@ -122,6 +124,5 @@ fun fingerprint(block: Fingerprint.() -> Unit): FindMethodFunc {
 }
 
 fun findMethodDirect(block: FindMethodFunc) = block
-fun findMethodListDirect(block: FindMethodListFunc) = block
 fun findClassDirect(block: FindClassFunc) = block
 fun findFieldDirect(block: FindFieldFunc) = block

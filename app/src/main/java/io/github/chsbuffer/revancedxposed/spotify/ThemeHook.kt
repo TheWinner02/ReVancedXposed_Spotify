@@ -1,34 +1,44 @@
 package io.github.chsbuffer.revancedxposed.spotify
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.graphics.Color
 import android.view.View
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import androidx.core.graphics.toColorInt
+import kotlin.math.abs
 
-class ThemeHook(private val app: Application, private val lpparam: XC_LoadPackage.LoadPackageParam) {
+class ThemeHook(app: Application, private val lpparam: XC_LoadPackage.LoadPackageParam) {
 
     private val colorCache = HashMap<Int, Int>()
     private val res = app.resources
 
     // --- COLORI MONET ---
+    @SuppressLint("DiscouragedApi")
     private val primaryBg = try {
         app.getColor(res.getIdentifier("system_neutral1_900", "color", "android"))
-    } catch (e: Exception) { Color.BLACK }
+    } catch (_: Exception) { Color.BLACK }
 
+    @SuppressLint("DiscouragedApi")
     private val secondaryBg = try {
         app.getColor(res.getIdentifier("system_neutral1_800", "color", "android"))
-    } catch (e: Exception) { Color.parseColor("#121212") }
+    } catch (_: Exception) {
+        "#121212".toColorInt() }
 
+    @SuppressLint("DiscouragedApi")
     private val accent = try {
         app.getColor(res.getIdentifier("system_accent1_200", "color", "android"))
-    } catch (e: Exception) { Color.parseColor("#1DB954") }
+    } catch (_: Exception) {
+        "#1DB954".toColorInt() }
 
     // NUOVO: Valore per lo stato "Pressed"
+    @SuppressLint("DiscouragedApi")
     private val accentPressed = try {
         app.getColor(res.getIdentifier("system_accent1_400", "color", "android"))
-    } catch (e: Exception) { Color.parseColor("#1ABC54") }
+    } catch (_: Exception) {
+        "#1ABC54".toColorInt() }
 
     fun hook() {
         val classLoader = lpparam.classLoader
@@ -214,7 +224,7 @@ class ThemeHook(private val app: Application, private val lpparam: XC_LoadPackag
     }
 
     private fun replaceColorLogic(color: Int): Int {
-        if (color == Color.TRANSPARENT) return color
+        if (color == Color.TRANSPARENT) return 0
         colorCache[color]?.let { return it }
 
         val a = Color.alpha(color)
@@ -228,7 +238,7 @@ class ThemeHook(private val app: Application, private val lpparam: XC_LoadPackag
 
             // 2. TESTI E ICONE LUMINOSE -> ACCENT
             // (Puoi commentare questo se preferisci che i testi bianchi restino bianchi invece di colorarsi)
-            (r > 150 && Math.abs(r - g) < 20 && Math.abs(r - b) < 20) -> accent
+            (r > 150 && abs(r - g) < 20 && abs(r - b) < 20) -> accent
 
             // 3. SFONDO BASE (Nero profondo) -> PRIMARY BG
             // Spotify usa valori RGB molto bassi (es. 18,18,18) per lo sfondo dietro a tutto.

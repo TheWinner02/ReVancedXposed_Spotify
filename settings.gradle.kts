@@ -25,11 +25,11 @@ dependencyResolutionManagement {
 }
 
 plugins {
-    id("com.android.settings") version ("8.13.0")
+    id("com.android.settings") version ("9.1.1")
 }
 
 android {
-    compileSdk = 36
+    compileSdk = 37
     minSdk = 27
 }
 

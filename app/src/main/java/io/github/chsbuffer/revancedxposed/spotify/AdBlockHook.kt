@@ -59,10 +59,7 @@ class AdBlockHook(private val lpparam: LoadPackageParam) {
                 "https://analytics.spotify.com",
                 "https://tracking.spotify.com",
                 "https://log.spotify.com",
-                "https://crashdump.spotify.com",
-                "https://dealer.g2.spotify.com",
-                "https://gew1-dealer.g2.spotify.com",
-                "https://gew1-dealer-ssl.spotify.com"
+                "https://crashdump.spotify.com"
             )
 
             XposedBridge.hookAllMethods(httpConnectionImpl, "send", object : XC_MethodHook() {

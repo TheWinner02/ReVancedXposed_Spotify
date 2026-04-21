@@ -19,6 +19,7 @@ typealias IHookCallback = (MethodHookParam) -> Unit
 class HookDsl<TCallback>(emptyCallback: TCallback) {
     var before: TCallback = emptyCallback
     var after: TCallback = emptyCallback
+    var replace: TCallback = emptyCallback
 
     fun before(f: TCallback) {
         this.before = f
@@ -27,19 +28,27 @@ class HookDsl<TCallback>(emptyCallback: TCallback) {
     fun after(f: TCallback) {
         this.after = f
     }
+
+    fun replace(f: TCallback) {
+        this.replace = f
+    }
 }
 
 inline fun Member.hookMethod(crossinline block: HookDsl<IHookCallback>.() -> Unit) {
     val builder = HookDsl<IHookCallback> {}.apply(block)
-    hookMethodInternal(builder.before, builder.after)
+    hookMethodInternal(builder.before, builder.after, builder.replace)
 }
 
 inline fun Member.hookMethodInternal(
-    crossinline before: IHookCallback, crossinline after: IHookCallback
+    crossinline before: IHookCallback, crossinline after: IHookCallback, noinline replace: IHookCallback
 ) {
     XposedBridge.hookMethod(this, object : XC_MethodHook() {
         override fun beforeHookedMethod(param: XC_MethodHook.MethodHookParam) {
             before(param)
+            if (replace !== emptyCallback) {
+                replace(param)
+                param.result = param.result // Ensure it's not null if it was meant to be replaced
+            }
         }
 
         override fun afterHookedMethod(param: XC_MethodHook.MethodHookParam) {
@@ -47,6 +56,8 @@ inline fun Member.hookMethodInternal(
         }
     })
 }
+
+val emptyCallback: IHookCallback = {}
 
 @JvmInline
 value class ScopedHookParam(val outerParam: MethodHookParam)
@@ -77,14 +88,12 @@ class ScopedHook : XC_MethodHook() {
     ) {
         XposedBridge.hookMethod(hookMethod, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                val outerParam = outerParam.get()
-                if (outerParam == null) return
+                val outerParam = outerParam.get() ?: return
                 before(ScopedHookParam(outerParam), param)
             }
 
             override fun afterHookedMethod(param: MethodHookParam) {
-                val outerParam = outerParam.get()
-                if (outerParam == null) return
+                val outerParam = outerParam.get() ?: return
                 after(ScopedHookParam(outerParam), param)
             }
         })

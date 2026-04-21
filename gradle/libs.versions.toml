@@ -1,9 +1,10 @@
 [versions]
-agp = "8.13.2"
+agp = "9.1.1"
+flatbuffersJava = "25.2.10"
 kotlin = "2.3.20"
-dexkit = "2.0.7"
+dexkit = "2.2.0"
 xposed = "82"
-annotation = "1.9.1"
+annotation = "1.10.0"
 gson = "2.13.2"
 kotlinxCoroutinesAndroid = "1.10.2"
 fuel = "3.0.0-alpha04"
@@ -14,6 +15,7 @@ material = "1.13.0"
 
 [libraries]
 dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }
+flatbuffers-java = { module = "com.google.flatbuffers:flatbuffers-java", version.ref = "flatbuffersJava" }
 xposed = { group = "de.robv.android.xposed", name = "api", version.ref = "xposed" }
 annotation = { group = "androidx.annotation", name = "annotation", version.ref = "annotation" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
@@ -22,7 +24,7 @@ fuel = { group = "com.github.kittinunf.fuel", name = "fuel", version.ref = "fuel
 junit-jupiter-params = { group = "org.junit.jupiter", name = "junit-jupiter-params", version.ref = "junit" }
 jadx-core = { group = "io.github.skylot", name = "jadx-core", version.ref = "jadx" }
 slf4j-simple = { group = "org.slf4j", name = "slf4j-simple", version.ref = "slf4j" }
-kotlinx-serialization-protobuf = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-protobuf", version = "1.9.0" }
+kotlinx-serialization-protobuf = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-protobuf", version = "1.11.0" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]

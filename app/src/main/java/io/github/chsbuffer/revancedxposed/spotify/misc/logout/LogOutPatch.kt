@@ -25,9 +25,9 @@ fun SpotifyHook.LogOutPatch() {
 
     // --- LAYER 1 & 2: Network Interceptor (OkHttp3) ---
     try {
-        val chainClass = runCatching { Class.forName("okhttp3.Interceptor\$Chain", false, cl) }.getOrNull() ?: return
+        val chainClass = runCatching { Class.forName($$"okhttp3.Interceptor$Chain", false, cl) }.getOrNull() ?: return
         val reqClass = Class.forName("okhttp3.Request", false, cl)
-        val builderClass = Class.forName("okhttp3.Response\$Builder", false, cl)
+        val builderClass = Class.forName($$"okhttp3.Response$Builder", false, cl)
         val bodyClass = Class.forName("okhttp3.ResponseBody", false, cl)
         val mtClass = Class.forName("okhttp3.MediaType", false, cl)
 
@@ -65,7 +65,7 @@ fun SpotifyHook.LogOutPatch() {
 
                         param.result = findMethodSafe(builderClass, "build")?.invoke(builder)
                     }
-                } catch (e: Exception) { /* Silent fail */ }
+                } catch (_: Exception) { /* Silent fail */ }
             }
 
             override fun afterHookedMethod(param: MethodHookParam) {
@@ -106,7 +106,7 @@ fun SpotifyHook.LogOutPatch() {
 
                         param.result = findMethodSafe(builder.javaClass, "build")?.invoke(builder)
                     }
-                } catch (e: Exception) { /* Silent fail */ }
+                } catch (_: Exception) { /* Silent fail */ }
             }
         })
     } catch (e: Throwable) {
