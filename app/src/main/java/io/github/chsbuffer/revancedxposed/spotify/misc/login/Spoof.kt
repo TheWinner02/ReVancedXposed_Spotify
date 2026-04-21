@@ -30,9 +30,10 @@ object Spoof {
         proxyPort = startLocalProxy()
 
         applyNativeHttpSpoof(classLoader)
-        System.loadLibrary("dexkit")
+        runCatching { System.loadLibrary("dexkit") }
 
         thread {
+            Thread.sleep(1000)
             runCatching {
                 DexKitBridge.create(apkPath).use { bridge ->
                     // PASSIAMO IL CLOASSLOADER PER LA CONVERSIONE
