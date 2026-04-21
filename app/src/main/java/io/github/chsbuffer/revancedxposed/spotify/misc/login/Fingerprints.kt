@@ -41,6 +41,11 @@ object Fingerprints {
 
     // 4. PLATFORM SPOOF (Risolve SPOOF ERROR: Fingerprint Platform non trovato)
     val loginClientPlatformFingerprint: FindMethodFunc = fingerprint {
+        classMatcher {
+            // Escludiamo esplicitamente le classi di ReVanced che abbiamo visto nei log
+            // Cercando solo nel pacchetto "p" (dove si trova p/vx6)
+            descriptor = "Lp/.*;"
+        }
         methodMatcher {
             returnType = "Ljava/lang/String;"
             usingStrings("android")
