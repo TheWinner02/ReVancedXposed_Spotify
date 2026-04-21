@@ -62,11 +62,14 @@ object Fingerprints {
         }
     }
 
-    // 7. CONFIG MAPS (Deep Spoof)
+    // 7. DEEP SPOOF (Mappe) - Più specifico per velocizzare
     val loginMapFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
             parameters("Ljava/util/Map;")
             accessFlags(AccessFlags.PUBLIC)
+            // Cerchiamo metodi che NON restituiscono nulla (void)
+            // perché solitamente "riempiono" la mappa passata come argomento
+            returnType = "V"
         }
     }
 
