@@ -1,6 +1,5 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.login
 
-import android.hardware.biometrics.BiometricManager
 import io.github.chsbuffer.revancedxposed.AccessFlags
 import io.github.chsbuffer.revancedxposed.FindMethodFunc
 import io.github.chsbuffer.revancedxposed.Opcode
@@ -12,50 +11,41 @@ import java.lang.reflect.Modifier
 
 object Fingerprints {
 
-    // 1. CLIENT ID (Metodo diretto)
+    // 1. CLIENT ID
     val setClientIdFingerprint: FindMethodFunc = fingerprint {
-        classMatcher { descriptor = "Lcom/spotify/connectivity/ApplicationScopeConfiguration;" }
         methodMatcher {
             name = "setClientId"
             parameters("Ljava/lang/String;")
         }
     }
 
-    // 2. USER AGENT (Metodo diretto)
+    // 2. USER AGENT
     val setUserAgentFingerprint: FindMethodFunc = fingerprint {
-        classMatcher { descriptor = "Lcom/spotify/connectivity/ApplicationScopeConfiguration;" }
         methodMatcher {
             name = "setDefaultHTTPUserAgent"
             parameters("Ljava/lang/String;")
         }
     }
 
-    // 3. ACCESS POINT (Risolve SPOOF ERROR: Fingerprint AccessPoint non trovato)
+    // 3. ACCESS POINT
     val setAccessPointFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
-            // Cerchiamo un metodo che accetta una String e ha a che fare con la rete
-            // Spesso il nome è 'setAccessPoint' ma potrebbe essere offuscato
             usingStrings("accesspoint", "http://")
             parameters("Ljava/lang/String;")
         }
     }
 
-    // 4. PLATFORM SPOOF (Risolve SPOOF ERROR: Fingerprint Platform non trovato)
+    // 4. PLATFORM GETTER (Singolo o Lista)
     val loginClientPlatformFingerprint: FindMethodFunc = fingerprint {
-        classMatcher {
-            // Escludiamo esplicitamente le classi di ReVanced che abbiamo visto nei log
-            // Cercando solo nel pacchetto "p" (dove si trova p/vx6)
-            descriptor = "Lp/.*;"
-        }
         methodMatcher {
-            returnType = "Ljava/lang/String;"
+            returnType = "java.lang.String"
             usingStrings("android")
             parameters()
             accessFlags(AccessFlags.PUBLIC)
         }
     }
 
-    // 5. INTEGRITY BYPASS (Opcodes originali)
+    // 5. INTEGRITY BYPASS
     val runIntegrityVerificationFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
             accessFlags(AccessFlags.PUBLIC, AccessFlags.FINAL)
@@ -72,34 +62,30 @@ object Fingerprints {
         }
     }
 
-    // Fingerprint per rilevare quando Spotify carica la logica nativa Orbit
+    // 6. ORBIT LIBRARY LOAD
     val orbitLibraryFingerprint: FindMethodFunc = fingerprint {
-        // Cerca il metodo che carica o inizializza il JNI di Orbit
-        strings("/liborbit-jni-spotify.so")
+        methodMatcher {
+            usingStrings("orbit-jni-spotify")
+        }
     }
 
-    // Fingerprint per i metodi che scambiano mappe di configurazione (Platform Spoof)
+    // 7. CONFIG MAPS (Deep Spoof)
     val loginMapFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
-            // Cerchiamo metodi che prendono una Map come primo argomento
             parameters("Ljava/util/Map;")
-            // Spesso usati per "UserInfo", "ClientInfo" o "AuthContext"
             accessFlags(AccessFlags.PUBLIC)
         }
     }
 
-    // 6. METODI GENERICI (Ottimizzati per evitare i "39 metodi" del log)
+    // 8. METODI GENERICI (Versioni/Hardware)
     fun findClientDataMethods(bridge: DexKitBridge, type: String): List<MethodData> {
         return bridge.findMethod {
             matcher {
                 returnType = "java.lang.String"
                 parameters()
                 modifiers = Modifier.PUBLIC
-
                 when(type) {
-                    // Da client.txt
                     "getClientVersion" -> usingStrings("android/")
-                    // Da hardware.txt
                     "getSystemVersion" -> usingStrings("release")
                     "getHardwareMachine" -> usingStrings("model")
                 }
