@@ -207,85 +207,62 @@ object Spoof {
 
         // --- E. PLATFORM SPOOF ---
         runCatching {
-            val platformFunc: FindMethodFunc = Fingerprints.loginClientPlatformFingerprint
-            // Avvolgiamo il singolo risultato in una lista per poter usare .forEach
-            val platformMethods: List<MethodData> = listOf(platformFunc(bridge))
+            val platformFunc = Fingerprints.loginClientPlatformFingerprint
+            val result = platformFunc(bridge)
+            val platformMethods = if (result is List<*>) result as List<MethodData> else listOf(
+                result
+            )
 
+            XposedBridge.log("SPOOF DEBUG: Trovati ${platformMethods.size} metodi Platform")
             platformMethods.forEach { mData ->
-                runCatching {
-                    val method = mData.getMethodInstance(classLoader)
-                    XposedBridge.hookMethod(method, object : XC_MethodHook() {
-                        override fun afterHookedMethod(param: MethodHookParam) {
-                            if (param.result == "android") {
-                                param.result = "ios"
-                                XposedBridge.log("SPOOF: Platform getter -> ios")
-                            }
+                val method = mData.getMethodInstance(classLoader)
+                XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        if (param.result == "android") {
+                            param.result = "ios"
+                            XposedBridge.log("SPOOF: Platform convertita in iOS")
                         }
-                    })
-                }
+                    }
+                })
             }
-        }.onFailure { XposedBridge.log("SPOOF ERROR: Platform hook fallito") }
+        }.onFailure { XposedBridge.log("SPOOF ERROR: Platform hook fallito: ${it.message}") }
 
         // --- F. DEEP OBJECT & ORBIT SPOOF (Mappe e Protobuf) ---
         runCatching {
-            val mapFunc: FindMethodFunc = Fingerprints.loginMapFingerprint
-            // NON usare listOf() qui, perché mapFunc restituisce già una List
-            val mapMethods: List<MethodData> = listOf(mapFunc(bridge))
+            val mapFunc = Fingerprints.loginMapFingerprint
+            val mapMethods = mapFunc(bridge) as List<MethodData>
 
-            if (mapMethods.isNotEmpty()) {
-                XposedBridge.log("SPOOF: Applicazione Deep Spoof su ${mapMethods.size} metodi")
-                mapMethods.forEach { mData ->
-                    runCatching {
-                        val method = mData.getMethodInstance(classLoader)
-                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
-                            override fun beforeHookedMethod(param: MethodHookParam) {
-                                val firstArg = param.args?.getOrNull(0) ?: return
-                                if (firstArg is MutableMap<*, *>) {
-                                    @Suppress("UNCHECKED_CAST")
-                                    val map = firstArg as MutableMap<String, Any?>
-                                    if (map["platform"] == "android" || map["App-Platform"] == "android") {
-                                        map["platform"] = "ios"
-                                        map["App-Platform"] = "ios"
-                                        XposedBridge.log("SPOOF: Map forzata a ios")
-                                    }
-                                } else {
-                                    val clazz = firstArg.javaClass
-                                    if (clazz.name.startsWith("com.spotify")) {
-                                        clazz.declaredFields.forEach { field ->
-                                            runCatching {
-                                                field.isAccessible = true
-                                                if (field.type == String::class.java && field.get(firstArg) == "android") {
-                                                    field.set(firstArg, "ios")
-                                                    XposedBridge.log("SPOOF: Campo Protobuf ${field.name} -> ios")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        })
-                    }
-                }
-            }
-        }
-
-        // --- G. ORBIT LIBRARY LOAD TRIGGER ---
-        runCatching {
-            val orbitFunc: FindMethodFunc = Fingerprints.orbitLibraryFingerprint
-            // NON usare listOf() qui
-            val orbitMethods: List<MethodData> = listOf(orbitFunc(bridge))
-
-            orbitMethods.forEach { mData ->
+            XposedBridge.log("SPOOF DEBUG: Trovati ${mapMethods.size} metodi Map/Protobuf")
+            mapMethods.forEach { mData ->
                 runCatching {
                     val method = mData.getMethodInstance(classLoader)
                     XposedBridge.hookMethod(method, object : XC_MethodHook() {
-                        override fun afterHookedMethod(param: MethodHookParam) {
-                            XposedBridge.log("SPOOF: Inizializzazione Orbit rilevata")
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            val firstArg = param.args?.getOrNull(0) ?: return
+                            if (firstArg is MutableMap<*, *>) {
+                                @Suppress("UNCHECKED_CAST")
+                                val map = firstArg as MutableMap<String, Any?>
+                                if (map["platform"] == "android" || map["App-Platform"] == "android") {
+                                    map["platform"] = "ios"
+                                    map["App-Platform"] = "ios"
+                                    XposedBridge.log("SPOOF: Map intercettata e forzata a ios")
+                                }
+                            } else {
+                                // Logica Protobuf fields...
+                                runCatching { XposedHelpers.setObjectField(firstArg, "platform_", "ios") }
+                            }
                         }
                     })
                 }
             }
-        }
+        }.onFailure { XposedBridge.log("SPOOF ERROR: Deep Spoof hook fallito: ${it.message}") }
+
+        // --- G. ORBIT TRIGGER ---
+        runCatching {
+            val orbitFunc = Fingerprints.orbitLibraryFingerprint
+            val orbitMethods = orbitFunc(bridge) as List<MethodData>
+            XposedBridge.log("SPOOF DEBUG: Trovati ${orbitMethods.size} trigger Orbit")
+        }.onFailure { XposedBridge.log("SPOOF ERROR: Orbit Trigger fallito") }
     }
 
     private fun applySignatureHook(classLoader: ClassLoader) {
