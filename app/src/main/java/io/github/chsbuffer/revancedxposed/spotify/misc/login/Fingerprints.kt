@@ -32,10 +32,9 @@ object Fingerprints {
     // 3. ACCESS POINT (Risolve SPOOF ERROR: Fingerprint AccessPoint non trovato)
     val setAccessPointFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
-            // Cerchiamo il metodo che accetta una stringa e ha a che fare con l'accesspoint
             parameters("Ljava/lang/String;")
-            // Usiamo solo le stringhe più probabili per non fallire la ricerca
-            usingStrings("accesspoint", "ap.spotify.com")
+            // Cerchiamo il metodo che usa la struttura URL di Spotify
+            usingStrings("http://", "https://", "accesspoint")
         }
     }
 
@@ -44,9 +43,8 @@ object Fingerprints {
         methodMatcher {
             returnType = "Ljava/lang/String;"
             usingStrings("android")
-            // Cerchiamo un metodo pubblico senza parametri (tipico dei getter della piattaforma)
-            accessFlags(AccessFlags.PUBLIC)
             parameters()
+            accessFlags(AccessFlags.PUBLIC)
         }
     }
 
@@ -72,14 +70,15 @@ object Fingerprints {
         return bridge.findMethod {
             matcher {
                 returnType = "java.lang.String"
-                modifiers = Modifier.PUBLIC
-                // Cerchiamo solo metodi senza parametri (Getter)
                 parameters()
+                modifiers = Modifier.PUBLIC
 
                 when(type) {
+                    // Da client.txt
                     "getClientVersion" -> usingStrings("android/")
+                    // Da hardware.txt
                     "getSystemVersion" -> usingStrings("release")
-                    "getHardwareMachine" -> usingStrings("model", "manufacturer")
+                    "getHardwareMachine" -> usingStrings("model")
                 }
             }
         }
