@@ -1,5 +1,6 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.login
 
+import android.hardware.biometrics.BiometricManager
 import io.github.chsbuffer.revancedxposed.AccessFlags
 import io.github.chsbuffer.revancedxposed.FindMethodFunc
 import io.github.chsbuffer.revancedxposed.Opcode
@@ -68,6 +69,22 @@ object Fingerprints {
                 Opcode.MOVE_RESULT,
                 Opcode.IF_EQ
             )
+        }
+    }
+
+    // Fingerprint per rilevare quando Spotify carica la logica nativa Orbit
+    val orbitLibraryFingerprint: FindMethodFunc = fingerprint {
+        // Cerca il metodo che carica o inizializza il JNI di Orbit
+        strings("/liborbit-jni-spotify.so")
+    }
+
+    // Fingerprint per i metodi che scambiano mappe di configurazione (Platform Spoof)
+    val loginMapFingerprint: FindMethodFunc = fingerprint {
+        methodMatcher {
+            // Cerchiamo metodi che prendono una Map come primo argomento
+            parameters("Ljava/util/Map;")
+            // Spesso usati per "UserInfo", "ClientInfo" o "AuthContext"
+            accessFlags(AccessFlags.PUBLIC)
         }
     }
 
