@@ -4,12 +4,14 @@ import io.github.chsbuffer.revancedxposed.AccessFlags
 import io.github.chsbuffer.revancedxposed.FindMethodFunc
 import io.github.chsbuffer.revancedxposed.Opcode
 import io.github.chsbuffer.revancedxposed.fingerprint
+import io.github.chsbuffer.revancedxposed.parameters
 import org.luckypray.dexkit.DexKitBridge
 import org.luckypray.dexkit.result.MethodData
+import java.lang.reflect.Modifier
 
 object Fingerprints {
 
-    // 1. CLIENT ID (Nome classe fisso, molto veloce)
+    // 1. CLIENT ID (Metodo diretto)
     val setClientIdFingerprint: FindMethodFunc = fingerprint {
         classMatcher { descriptor = "Lcom/spotify/connectivity/ApplicationScopeConfiguration;" }
         methodMatcher {
@@ -18,7 +20,7 @@ object Fingerprints {
         }
     }
 
-    // 2. USER AGENT (Nome classe fisso)
+    // 2. USER AGENT (Metodo diretto)
     val setUserAgentFingerprint: FindMethodFunc = fingerprint {
         classMatcher { descriptor = "Lcom/spotify/connectivity/ApplicationScopeConfiguration;" }
         methodMatcher {
@@ -27,23 +29,28 @@ object Fingerprints {
         }
     }
 
-    // 3. ACCESS POINT (Fondamentale per far passare il traffico dal proxy locale)
+    // 3. ACCESS POINT (Risolve SPOOF ERROR: Fingerprint AccessPoint non trovato)
     val setAccessPointFingerprint: FindMethodFunc = fingerprint {
-        classMatcher { descriptor = "Lcom/spotify/connectivity/ApplicationScopeConfiguration;" }
         methodMatcher {
-            name = "setAccessPoint"
+            // Cerchiamo il metodo che accetta una stringa e ha a che fare con l'accesspoint
             parameters("Ljava/lang/String;")
+            // Usiamo solo le stringhe più probabili per non fallire la ricerca
+            usingStrings("accesspoint", "ap.spotify.com")
         }
     }
 
-    // 4. PLATFORM SPOOF (Cerca chi restituisce "android" per forzare "ios")
+    // 4. PLATFORM SPOOF (Risolve SPOOF ERROR: Fingerprint Platform non trovato)
     val loginClientPlatformFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
-            usingStrings("android", "client_id", "client_version")
+            returnType = "Ljava/lang/String;"
+            usingStrings("android")
+            // Cerchiamo un metodo pubblico senza parametri (tipico dei getter della piattaforma)
+            accessFlags(AccessFlags.PUBLIC)
+            parameters()
         }
     }
 
-    // 5. INTEGRITY BYPASS (Opcodes precisi per la versione 9.0.58)
+    // 5. INTEGRITY BYPASS (Opcodes originali)
     val runIntegrityVerificationFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
             accessFlags(AccessFlags.PUBLIC, AccessFlags.FINAL)
@@ -60,20 +67,20 @@ object Fingerprints {
         }
     }
 
-    // 6. METODI GENERICI PER VERSIONI (Fallback se gli altri falliscono)
-    // Questa funzione serve per lo spoofing "diffuso" di versioni e hardware
+    // 6. METODI GENERICI (Ottimizzati per evitare i "39 metodi" del log)
     fun findClientDataMethods(bridge: DexKitBridge, type: String): List<MethodData> {
-        val searchString = when(type) {
-            "getClientVersion" -> "android/"
-            "getSystemVersion" -> "Android OS"
-            "getHardwareMachine" -> "unknown"
-            else -> return emptyList()
-        }
-
         return bridge.findMethod {
             matcher {
                 returnType = "java.lang.String"
-                usingStrings(searchString)
+                modifiers = Modifier.PUBLIC
+                // Cerchiamo solo metodi senza parametri (Getter)
+                parameters()
+
+                when(type) {
+                    "getClientVersion" -> usingStrings("android/")
+                    "getSystemVersion" -> usingStrings("release")
+                    "getHardwareMachine" -> usingStrings("model", "manufacturer")
+                }
             }
         }
     }
