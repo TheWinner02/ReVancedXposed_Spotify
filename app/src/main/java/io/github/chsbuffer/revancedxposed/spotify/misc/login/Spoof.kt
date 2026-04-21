@@ -64,6 +64,9 @@ object Spoof {
 
     private fun applyHooks(bridge: DexKitBridge, classLoader: ClassLoader) {
         XposedBridge.log("SPOOF [CORE]: Inizio scansione e hook dinamici...")
+        XposedBridge.log("DEBUG: Cerco ClientInfo...")
+        val testClient = bridge.findClass { matcher { descriptor = "Lcom/spotify/signup/signup/v2/proto/ClientInfo;" } }
+        XposedBridge.log("DEBUG: Risultato ricerca classe: ${testClient.isNotEmpty()}")
 
         // 1, 2, 3. Configurazione Base
         val configHooks = mapOf(

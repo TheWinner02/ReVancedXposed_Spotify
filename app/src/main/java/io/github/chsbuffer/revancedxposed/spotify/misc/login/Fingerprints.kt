@@ -30,8 +30,9 @@ object Fingerprints {
     // 3. ACCESS POINT
     val setAccessPointFingerprint: FindMethodFunc = fingerprint {
         methodMatcher {
-            usingStrings("accesspoint", "http://")
             parameters("Ljava/lang/String;")
+            // Cerchiamo il metodo che viene usato per configurare l'endpoint
+            usingStrings("accesspoint", "https://")
         }
     }
 
@@ -91,10 +92,11 @@ object Fingerprints {
 
     // 9.Fingerprint per il Protobuf di Login (ClientInfo)
     val clientInfoFingerprint: FindMethodFunc = fingerprint {
-        classMatcher { descriptor = "Lcom/spotify/signup/signup/v2/proto/ClientInfo;" }
         methodMatcher {
+            // Cerchiamo qualsiasi metodo che contenga la stringa "android" e la cambi in "ios"
+            // o che sia chiaramente un setter di piattaforma
+            usingStrings("android")
             name = "setPlatform"
-            parameters("Ljava/lang/String;")
         }
     }
 
