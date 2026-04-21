@@ -30,6 +30,7 @@ object Spoof {
         proxyPort = startLocalProxy()
 
         applyNativeHttpSpoof(classLoader)
+        System.loadLibrary("dexkit")
 
         thread {
             runCatching {
