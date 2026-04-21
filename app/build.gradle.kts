@@ -106,6 +106,7 @@ dependencies {
 //    implementation(libs.dexkit)
     implementation(group = "", name = "dexkit-android", ext = "aar")
     implementation(libs.flatbuffers.java) // dexkit dependency
+    compileOnly(libs.okhttp)
     implementation(libs.annotation)
     implementation(libs.kotlinx.serialization.protobuf)
     implementation(libs.kotlinx.coroutines.android)
