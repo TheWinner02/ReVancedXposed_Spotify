@@ -30,24 +30,23 @@ object Spoof {
         proxyPort = startLocalProxy()
 
         applyNativeHttpSpoof(classLoader)
-        val arch = if (android.os.Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
-        val libPath = "$moduleApkPath!/lib/$arch/libdexkit.so"
-        try {
-            runCatching { System.loadLibrary(libPath) }
-            XposedBridge.log("SPOOF: DexKit caricato da $libPath")
-        } catch (e: Exception) {
-            XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${e.message}")
-        }
 
         thread {
             Thread.sleep(1000)
             runCatching {
+                val arch = if (android.os.Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
+                val libPath = "$moduleApkPath!/lib/$arch/libdexkit.so"
+
+                System.loadLibrary(libPath)
+                XposedBridge.log("SPOOF: DexKit caricato da $libPath")
+
                 DexKitBridge.create(apkPath).use { bridge ->
                     // PASSIAMO IL CLOASSLOADER PER LA CONVERSIONE
                     applyHooks(bridge, classLoader)
                 }
             }.onFailure {
                 XposedBridge.log("SPOOF ERROR: DexKit fallito -> ${it.message}")
+                it.printStackTrace()
             }
         }
         applySignatureHook()
