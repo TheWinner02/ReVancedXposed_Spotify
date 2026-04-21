@@ -43,7 +43,26 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
 
-        Spoof.init(lpparam.classLoader, lpparam.appInfo.sourceDir)
+        // Agganciamoci all'onCreate dell'Application per avere un Context
+        XposedHelpers.findAndHookMethod(
+            "android.app.Application",
+            lpparam.classLoader,
+            "onCreate",
+            object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val context = param.thisObject as android.content.Context
+
+                    // Recuperiamo il percorso del NOSTRO modulo (l'APK che contiene il codice Xposed)
+                    // Usiamo il package name del tuo modulo (controllalo nel build.gradle o manifest)
+                    val myModulePkg = "io.github.chsbuffer.revancedxposed"
+                    val moduleInfo = context.packageManager.getApplicationInfo(myModulePkg, 0)
+                    val moduleApkPath = moduleInfo.sourceDir
+
+                    // Passiamo entrambi i percorsi a Spoof
+                    Spoof.init(lpparam.classLoader, lpparam.appInfo.sourceDir, moduleApkPath)
+                }
+            }
+        )
 
         // --- NUOVO TRIGGER: LONG CLICK SU ICONA PROFILO ---
         XposedHelpers.findAndHookMethod(

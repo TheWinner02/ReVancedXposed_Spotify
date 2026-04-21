@@ -26,11 +26,13 @@ object Spoof {
 
     private var proxyPort: Int = 0
 
-    fun init(classLoader: ClassLoader, apkPath: String) {
+    fun init(classLoader: ClassLoader, apkPath: String, moduleApkPath: String) {
         proxyPort = startLocalProxy()
 
         applyNativeHttpSpoof(classLoader)
-        runCatching { System.loadLibrary("dexkit") }
+        val arch = if (android.os.Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
+        val libPath = "$moduleApkPath!/lib/$arch/libdexkit.so"
+        runCatching { System.loadLibrary(libPath) }
 
         thread {
             Thread.sleep(1000)
