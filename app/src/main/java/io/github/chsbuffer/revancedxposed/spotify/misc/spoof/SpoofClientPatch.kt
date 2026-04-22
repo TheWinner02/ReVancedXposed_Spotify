@@ -1,6 +1,5 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.spoof
 
-import android.R.attr.port
 import android.content.pm.PackageInfo
 import android.content.pm.Signature
 import android.os.Build
@@ -142,9 +141,9 @@ fun SpotifyHook.SpoofClient() {
         XposedBridge.log("SPOOF-CLIENT: Avvio scansione DexKit in background")
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir
-            // Usiamo il Bridge per cercare i metodi ma non blocchiamo l'esecuzione se fallisce un'unica query
             DexKitBridge.create(apkPath).use { bridge ->
-                applyDexKitDeepHooks(bridge, classLoader, iosClientId, iosUserAgent)
+                // Passiamo anche la porta qui
+                applyDexKitDeepHooks(bridge, classLoader, iosClientId, iosUserAgent, port)
             }
         }.onFailure {
             XposedBridge.log("SPOOF-CLIENT [FATAL]: Errore durante l'inizializzazione DexKit: ${it.message}")
@@ -152,8 +151,62 @@ fun SpotifyHook.SpoofClient() {
     }, 5, TimeUnit.SECONDS)
 }
 
-private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId: String, ua: String) {
+private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId: String, ua: String, port: Int) {
     XposedBridge.log("SPOOF-CLIENT [DEX]: Inizio Scansione fingerprints")
+
+    // 1. Forza il ritorno dei getter "android" -> "ios"
+    runCatching {
+        val methods1 = bridge.findMethod {
+            matcher {
+                returnType = "java.lang.String"
+                usingStrings("android")
+            }
+        }
+        methods1.forEach { mData ->
+            XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    param.result = "ios"
+                }
+            })
+        }
+    }
+
+    // 2. Forza gli header nelle mappe di login
+    runCatching {
+        val methods = bridge.findMethod {
+            matcher {
+                parameters("Ljava/util/Map;")
+                usingStrings("App-Platform")
+            }
+        }
+        methods.forEach { mData ->
+            XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
+                override fun afterHookedMethod(p: MethodHookParam) {
+                    val map = p.args[0] as? MutableMap<String, String> ?: return
+                    map["App-Platform"] = "ios"
+                    map["User-Agent"] = ua
+                    map["X-Client-Id"] = clientId
+                }
+            })
+        }
+    }
+
+    runCatching {
+        // Cerca i metodi che restituiscono "android" e falli restituire "ios"
+        val methods1 = bridge.findMethod {
+            matcher {
+                returnType = "java.lang.String"
+                usingStrings("android")
+            }
+        }
+        methods1.forEach { mData ->
+            XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    param.result = "ios"
+                }
+            })
+        }
+    }
 
     // Hook per Mappe e Protobuf Dinamici
     runCatching {
@@ -165,9 +218,9 @@ private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId
                 usingStrings("App-Platform")
             }
         }
-        
+
         XposedBridge.log("SPOOF-CLIENT [DEX]: Trovati ${methods.size} metodi per loginMap")
-        
+
         methods.forEach { mData ->
             runCatching {
                 XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
@@ -175,8 +228,7 @@ private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId
                         val originalUrl = p.args[0] as String
                         if (originalUrl.contains("127.0.0.1")) return // Non intercettare se è già il proxy
 
-                        if (originalUrl.contains("https://clienttoken.spotify.com/v1/clienttoken") ||
-                            (originalUrl.contains("clienttoken") && !originalUrl.contains("google"))) {
+                        if (originalUrl.contains("spotify.com/2") || originalUrl.contains("spotify.com/3") || originalUrl.contains("clienttoken")) {
                             p.args[0] = "http://127.0.0.1:$port/v1/clienttoken"
                             XposedBridge.log("SPOOF-CLIENT: REDIRECT ESEGUITO -> ${p.args[0]}")
                         }
