@@ -62,7 +62,12 @@ val viewModelClazz = findClassDirect {
 }
 
 val isPremiumUpsellField = findFieldDirect {
-    viewModelClazz().fields.filter { it.typeName == "boolean" }[1]
+    val clazz = viewModelClazz()
+    val fields = clazz.fields.filter { it.typeName == "boolean" }
+    // Tentiamo di essere più flessibili: cerchiamo un campo booleano che non sia il primo (solitamente 'isSelected' o simili)
+    if (fields.size >= 2) fields[1]
+    else if (fields.size == 1) fields[0]
+    else throw NoSuchElementException("isPremiumUpsellField not found in ${clazz.name}")
 }
 
 @SkipTest
