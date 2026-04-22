@@ -89,71 +89,34 @@ object IosClientTokenService {
         val body = OkHttpHelper.createRequestBody(mediaType, bodyBytes)
         
         return try {
-            val builderClass = OkHttpClient::class.java.classLoader?.loadClass("okhttp3.Request\$Builder")
-                               ?: Class.forName("okhttp3.Request\$Builder")
-            val requestClass = OkHttpClient::class.java.classLoader?.loadClass("okhttp3.Request")
-                               ?: Class.forName("okhttp3.Request")
-            val requestBodyClass = OkHttpClient::class.java.classLoader?.loadClass("okhttp3.RequestBody")
-                                   ?: Class.forName("okhttp3.RequestBody")
+            val loader = OkHttpClient::class.java.classLoader
+            val builderClass = loader?.loadClass("okhttp3.Request\$Builder") ?: Class.forName("okhttp3.Request\$Builder")
+            val requestClass = loader?.loadClass("okhttp3.Request") ?: Class.forName("okhttp3.Request")
+            val requestBodyClass = loader?.loadClass("okhttp3.RequestBody") ?: Class.forName("okhttp3.RequestBody")
             
             val builder = builderClass.getDeclaredConstructor().newInstance()
-            
             val allMethods = builderClass.methods
+            
             XposedBridge.log("SPOOF-PROXY: Analisi ${allMethods.size} metodi in Request\$Builder")
-            
-            // Dalla scansione dei log, i nomi sono:
-            // a(String, String) -> header
-            // d(String, String) -> header (probabilmente addHeader)
-            // e(String, RequestBody) -> method
-            // f(String) -> url (probabilmente)
-            // g(String) -> url (probabilmente)
-            // c() -> build (unico senza parametri che ritorna void/Object? No, deve ritornare Request)
-            
-            // Cerchiamo URL: metodo che accetta String e NON ritorna void (ritorna il Builder per concatenare)
-            val urlMethod = allMethods.find { m ->
-                m.parameterTypes.size == 1 && 
-                m.parameterTypes[0] == String::class.java && 
-                m.returnType != Void.TYPE &&
-                (m.name == "f" || m.name == "g" || m.name == "url")
-            } ?: allMethods.find { it.parameterTypes.size == 1 && it.parameterTypes[0] == String::class.java }
-              ?: throw NoSuchMethodException("URL Method not found")
+            allMethods.forEach { m ->
+                val p = m.parameterTypes.joinToString(",") { it.name }
+                XposedBridge.log("SPOOF-PROXY: Metodo: ${m.name}($p) -> ${m.returnType.name}")
+            }
 
-            // Cerchiamo HEADER: metodo che accetta (String, String) e NON ritorna void
-            val headerMethod = allMethods.find { m ->
-                m.parameterTypes.size == 2 && 
-                m.parameterTypes[0] == String::class.java && 
-                m.parameterTypes[1] == String::class.java &&
-                m.returnType != Void.TYPE &&
-                (m.name == "a" || m.name == "d" || m.name == "header")
-            } ?: allMethods.find { it.parameterTypes.size == 2 && it.parameterTypes[0] == String::class.java && it.parameterTypes[1] == String::class.java }
-              ?: throw NoSuchMethodException("Header Method not found")
-            
-            // Cerchiamo METHOD (POST): metodo che accetta (String, RequestBody)
-            val genericMethod = allMethods.find { m ->
-                m.parameterTypes.size == 2 && 
-                m.parameterTypes[0] == String::class.java && 
-                (m.parameterTypes[1].name.contains("RequestBody") || requestBodyClass.isAssignableFrom(m.parameterTypes[1]))
-            } ?: throw NoSuchMethodException("Generic Method (POST) not found")
+            // Ricerca basata su parametri (nomi offuscati non contano)
+            val urlMethod = allMethods.find { it.parameterTypes.size == 1 && it.parameterTypes[0] == String::class.java && it.returnType != Void.TYPE }
+                ?: throw NoSuchMethodException("URL method not found")
 
-            // Cerchiamo BUILD: metodo senza parametri che restituisce l'oggetto Request
-            // NOTA: Se l'offuscatore ha cambiato il ritorno in 'void' o 'Object', cerchiamo per esclusione
-            val buildMethod = allMethods.find { m ->
-                m.parameterTypes.isEmpty() && 
-                (m.returnType == requestClass || m.returnType.name.contains("Request")) &&
-                !m.name.contains("getClass")
-            } ?: allMethods.find { it.parameterTypes.isEmpty() && it.name == "c" } // Sospetto 'c' dai log
-              ?: allMethods.find { it.name == "build" }
-              ?: throw NoSuchMethodException("Build Method not found")
+            val headerMethod = allMethods.find { it.parameterTypes.size == 2 && it.parameterTypes[0] == String::class.java && it.parameterTypes[1] == String::class.java && it.returnType != Void.TYPE }
+                ?: throw NoSuchMethodException("Header method not found")
 
-            XposedBridge.log("SPOOF-PROXY: Metodi selezionati: URL=${urlMethod.name}, HEADER=${headerMethod.name}, POST=${genericMethod.name}, BUILD=${buildMethod.name}")
+            val genericMethod = allMethods.find { it.parameterTypes.size == 2 && it.parameterTypes[0] == String::class.java && (it.parameterTypes[1].name.contains("RequestBody") || requestBodyClass.isAssignableFrom(it.parameterTypes[1])) }
+                ?: throw NoSuchMethodException("Generic method (POST) not found")
 
-            urlMethod.invoke(builder, "https://clienttoken.spotify.com/v1/clienttoken")
-            genericMethod.invoke(builder, "POST", body)
-            headerMethod.invoke(builder, "Content-Type", "application/x-protobuf")
-            headerMethod.invoke(builder, "Accept", "application/x-protobuf")
-            headerMethod.invoke(builder, "User-Agent", IOS_USER_AGENT)
-            
-            val request = buildMethod.invoke(builder) as Request
+            val buildMethod = allMethods.find { it.parameterTypes.isEmpty() && (it.returnType == requestClass || it.returnType.name == requestClass.name) }
+                ?: throw NoSuchMethodException("Build method not found")
+
+            XposedBridge.log("SPOOF-PROXY: Identificati: URL=${urlMethod.name}, HEADER=${headerMethod.name}, POST=${genericMethod.name}, BUILD=${buildMethod.name}")
 
             urlMethod.invoke(builder, "https://clienttoken.spotify.com/v1/clienttoken")
             genericMethod.invoke(builder, "POST", body)
@@ -168,8 +131,7 @@ object IosClientTokenService {
                     XposedBridge.log("SPOOF-PROXY: Errore HTTP da Spotify: ${response.code}")
                     return null
                 }
-                val responseBody = response.body
-                ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBody.bytes())
+                ProtoBuf.decodeFromByteArray<ClientTokenResponse>(response.body.bytes())
             }
         } catch (e: Exception) {
             XposedBridge.log("SPOOF-PROXY: Errore riflessione critica OkHttp: ${e.message}")
