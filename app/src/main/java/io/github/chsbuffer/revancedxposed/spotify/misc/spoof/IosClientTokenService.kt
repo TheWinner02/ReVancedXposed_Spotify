@@ -88,21 +88,40 @@ object IosClientTokenService {
         val mediaType = OkHttpHelper.parseMediaType("application/x-protobuf")
         val body = OkHttpHelper.createRequestBody(mediaType, bodyBytes)
         
-        val request = Request.Builder()
-            .url("https://clienttoken.spotify.com/v1/clienttoken")
-            .post(body)
-            .header("Content-Type", "application/x-protobuf")
-            .header("Accept", "application/x-protobuf")
-            .header("User-Agent", IOS_USER_AGENT)
-            .build()
+        return try {
+            // Usiamo la riflessione per evitare NoSuchMethodError su url(), post(), header() e build()
+            // causati dalle differenze tra OkHttp 3 e 4/5 (valutati a runtime)
+            val builderClass = Class.forName("okhttp3.Request\$Builder")
+            val requestBodyClass = Class.forName("okhttp3.RequestBody")
+            val builder = builderClass.getDeclaredConstructor().newInstance()
+            
+            // builder.url(String)
+            builderClass.getMethod("url", String::class.java).invoke(builder, "https://clienttoken.spotify.com/v1/clienttoken")
+            
+            // builder.post(RequestBody)
+            builderClass.getMethod("post", requestBodyClass).invoke(builder, body)
+            
+            // builder.header(String, String)
+            val headerMethod = builderClass.getMethod("header", String::class.java, String::class.java)
+            headerMethod.invoke(builder, "Content-Type", "application/x-protobuf")
+            headerMethod.invoke(builder, "Accept", "application/x-protobuf")
+            headerMethod.invoke(builder, "User-Agent", IOS_USER_AGENT)
+            
+            // builder.build()
+            val request = builderClass.getMethod("build").invoke(builder) as Request
 
-        okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                XposedBridge.log("SPOOF-PROXY: Errore HTTP da Spotify: ${response.code}")
-                return null
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    XposedBridge.log("SPOOF-PROXY: Errore HTTP da Spotify: ${response.code}")
+                    return null
+                }
+                val responseBody = response.body
+                ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBody.bytes())
             }
-            val responseBody = response.body
-            return ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBody.bytes())
+        } catch (e: Exception) {
+            XposedBridge.log("SPOOF-PROXY: Errore riflessione Request.Builder: ${e.message}")
+            e.printStackTrace()
+            null
         }
     }
 }
