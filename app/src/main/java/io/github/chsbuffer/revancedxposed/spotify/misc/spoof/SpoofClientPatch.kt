@@ -6,10 +6,9 @@ import android.os.Build
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import io.github.chsbuffer.revancedxposed.parameters
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
-import io.github.chsbuffer.revancedxposed.spotify.misc.login.Fingerprints
 import org.luckypray.dexkit.DexKitBridge
-import org.luckypray.dexkit.result.MethodData
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -139,22 +138,33 @@ fun SpotifyHook.SpoofClient() {
         XposedBridge.log("SPOOF-CLIENT: Avvio scansione DexKit in background")
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir
+            // Usiamo il Bridge per cercare i metodi ma non blocchiamo l'esecuzione se fallisce un'unica query
             DexKitBridge.create(apkPath).use { bridge ->
                 applyDexKitDeepHooks(bridge, classLoader, iosClientId, iosUserAgent)
             }
         }.onFailure {
             XposedBridge.log("SPOOF-CLIENT [FATAL]: Errore durante l'inizializzazione DexKit: ${it.message}")
         }
-    }, 2, TimeUnit.SECONDS)
+    }, 5, TimeUnit.SECONDS)
 }
 
 private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId: String, ua: String) {
     XposedBridge.log("SPOOF-CLIENT [DEX]: Inizio Scansione fingerprints")
 
+    // Hook per Mappe e Protobuf Dinamici
     runCatching {
-        val mapMethods = asMethodList(Fingerprints.loginMapFingerprint(bridge))
-        XposedBridge.log("SPOOF-CLIENT [DEX]: Trovati ${mapMethods.size} metodi per loginMap")
-        mapMethods.forEach { mData ->
+        val methods = bridge.findMethod {
+            matcher {
+                parameters("Ljava/util/Map;")
+                returnType = "V"
+                modifiers = java.lang.reflect.Modifier.PUBLIC
+                usingStrings("App-Platform")
+            }
+        }
+        
+        XposedBridge.log("SPOOF-CLIENT [DEX]: Trovati ${methods.size} metodi per loginMap")
+        
+        methods.forEach { mData ->
             runCatching {
                 XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
@@ -170,53 +180,44 @@ private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId
                                 map["os"] = "ios"
                             }
                         }
-                        else if (arg.javaClass.name.startsWith("com.spotify")) {
-                            arg.javaClass.declaredFields.forEach { field ->
-                                if (field.name == "platform_" || field.name == "os_") {
-                                    runCatching {
-                                        field.isAccessible = true
-                                        if (field.type == String::class.java) {
-                                            XposedBridge.log("SPOOF-CLIENT [DEX]: Patching proto field ${field.name} -> ios")
-                                            field.set(arg, "ios")
-                                        }
-                                        else if (field.type == Int::class.javaPrimitiveType) {
-                                            XposedBridge.log("SPOOF-CLIENT [DEX]: Patching proto field ${field.name} -> 1 (ios)")
-                                            field.set(arg, 1)
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                 })
             }
         }
+    }.onFailure {
+        XposedBridge.log("SPOOF-CLIENT [DEX]: Errore durante scansione loginMap: ${it.message}")
     }
 
+    // Hook per ClientID e UA via DexKit (Scansione manuale per gestire duplicati)
     listOf(
-        Fingerprints.setClientIdFingerprint(bridge) to clientId,
-        Fingerprints.setUserAgentFingerprint(bridge) to ua
-    ).forEach { (res, value) ->
-        val methods = asMethodList(res)
-        XposedBridge.log("SPOOF-CLIENT [DEX]: Applicazione hook statico per valore: $value (metodi: ${methods.size})")
-        methods.forEach { m ->
-            runCatching {
-                XposedBridge.hookMethod(m.getMethodInstance(cl), object : XC_MethodHook() {
-                    override fun beforeHookedMethod(p: MethodHookParam) { p.args[0] = value }
-                })
+        "setClientId" to clientId,
+        "setDefaultHTTPUserAgent" to ua
+    ).forEach { (methodName, value) ->
+        runCatching {
+            val methods = bridge.findMethod {
+                matcher {
+                    name = methodName
+                    parameters("Ljava/lang/String;")
+                }
             }
+            
+            XposedBridge.log("SPOOF-CLIENT [DEX]: Trovati ${methods.size} metodi per $methodName")
+            
+            methods.forEach { mData ->
+                runCatching {
+                    XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
+                        override fun beforeHookedMethod(p: MethodHookParam) { 
+                            p.args[0] = value 
+                        }
+                    })
+                }
+            }
+        }.onFailure {
+            XposedBridge.log("SPOOF-CLIENT [DEX]: Errore durante hook DexKit per $methodName: ${it.message}")
         }
     }
 
     XposedBridge.log("SPOOF-CLIENT [DEX]: Scansione completata.")
-}
-
-private fun asMethodList(result: Any?): List<MethodData> {
-    return when (result) {
-        is List<*> -> @Suppress("UNCHECKED_CAST") (result as List<MethodData>)
-        is MethodData -> listOf(result)
-        else -> emptyList()
-    }
 }
 
 private fun hexToBytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
