@@ -5,16 +5,30 @@ import okhttp3.RequestBody;
 
 public class OkHttpHelper {
     public static MediaType parseMediaType(String type) {
-        // OkHttp 3 uses MediaType.parse(String)
-        // OkHttp 4+ uses MediaType.get(String) or Companion.parse(String)
-        // We try parse first which is common across many versions.
-        return MediaType.parse(type);
+        try {
+            // Tentiamo il metodo statico 'get' (OkHttp 4+)
+            return (MediaType) MediaType.class.getMethod("get", String.class).invoke(null, type);
+        } catch (Exception e) {
+            try {
+                // Tentiamo il metodo statico 'parse' (OkHttp 3)
+                return (MediaType) MediaType.class.getMethod("parse", String.class).invoke(null, type);
+            } catch (Exception e2) {
+                return null;
+            }
+        }
     }
 
     public static RequestBody createRequestBody(MediaType type, byte[] bytes) {
-        // OkHttp 3 uses RequestBody.create(MediaType, byte[])
-        // OkHttp 4+ uses RequestBody.create(byte[], MediaType) in Java or Companion.create in Kotlin
-        // We use the (MediaType, byte[]) signature which is the original one.
-        return RequestBody.create(type, bytes);
+        try {
+            // Tentiamo RequestBody.create(MediaType, byte[]) - OkHttp 3 e 4
+            return (RequestBody) RequestBody.class.getMethod("create", MediaType.class, byte[].class).invoke(null, type, bytes);
+        } catch (Exception e) {
+            try {
+                // Tentiamo RequestBody.create(byte[], MediaType) - Alcune versioni di OkHttp 4
+                return (RequestBody) RequestBody.class.getMethod("create", byte[].class, MediaType.class).invoke(null, bytes, type);
+            } catch (Exception e2) {
+                return null;
+            }
+        }
     }
 }
