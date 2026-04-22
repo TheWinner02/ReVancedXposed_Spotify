@@ -89,26 +89,33 @@ object IosClientTokenService {
         val body = OkHttpHelper.createRequestBody(mediaType, bodyBytes)
         
         return try {
-            // Usiamo la riflessione per evitare NoSuchMethodError su url(), post(), header() e build()
-            // causati dalle differenze tra OkHttp 3 e 4/5 (valutati a runtime)
-            val builderClass = Class.forName("okhttp3.Request\$Builder")
-            val requestBodyClass = Class.forName("okhttp3.RequestBody")
+            // Tentiamo di caricare la classe tramite il ClassLoader di sistema/app, non quello del modulo
+            val builderClass = OkHttpClient::class.java.classLoader?.loadClass("okhttp3.Request\$Builder") 
+                               ?: Class.forName("okhttp3.Request\$Builder")
+            val requestBodyClass = OkHttpClient::class.java.classLoader?.loadClass("okhttp3.RequestBody")
+                                   ?: Class.forName("okhttp3.RequestBody")
+            
             val builder = builderClass.getDeclaredConstructor().newInstance()
             
-            // builder.url(String)
-            builderClass.getMethod("url", String::class.java).invoke(builder, "https://clienttoken.spotify.com/v1/clienttoken")
+            // Cerchiamo i metodi con firme multiple per gestire OkHttp 3/4/5
+            val urlMethod = builderClass.methods.find { it.name == "url" && it.parameterTypes.size == 1 && it.parameterTypes[0] == String::class.java }
+                ?: throw NoSuchMethodException("url(String) not found")
             
-            // builder.post(RequestBody)
-            builderClass.getMethod("post", requestBodyClass).invoke(builder, body)
-            
-            // builder.header(String, String)
-            val headerMethod = builderClass.getMethod("header", String::class.java, String::class.java)
+            val postMethod = builderClass.methods.find { it.name == "post" && it.parameterTypes.size == 1 && requestBodyClass.isAssignableFrom(it.parameterTypes[0]) }
+                ?: throw NoSuchMethodException("post(RequestBody) not found")
+                
+            val headerMethod = builderClass.methods.find { it.name == "header" && it.parameterTypes.size == 2 && it.parameterTypes[0] == String::class.java && it.parameterTypes[1] == String::class.java }
+                ?: throw NoSuchMethodException("header(String, String) not found")
+                
+            val buildMethod = builderClass.getMethod("build")
+
+            urlMethod.invoke(builder, "https://clienttoken.spotify.com/v1/clienttoken")
+            postMethod.invoke(builder, body)
             headerMethod.invoke(builder, "Content-Type", "application/x-protobuf")
             headerMethod.invoke(builder, "Accept", "application/x-protobuf")
             headerMethod.invoke(builder, "User-Agent", IOS_USER_AGENT)
             
-            // builder.build()
-            val request = builderClass.getMethod("build").invoke(builder) as Request
+            val request = buildMethod.invoke(builder) as Request
 
             okHttpClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) {
@@ -119,8 +126,12 @@ object IosClientTokenService {
                 ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBody.bytes())
             }
         } catch (e: Exception) {
-            XposedBridge.log("SPOOF-PROXY: Errore riflessione Request.Builder: ${e.message}")
-            e.printStackTrace()
+            XposedBridge.log("SPOOF-PROXY: Errore riflessione critica OkHttp: ${e.message}")
+            // Loggiamo i metodi disponibili per debug se fallisce
+            runCatching {
+                val builderClass = Class.forName("okhttp3.Request\$Builder")
+                XposedBridge.log("SPOOF-PROXY: Metodi disponibili in Request\$Builder: ${builderClass.methods.map { it.name }.distinct()}")
+            }
             null
         }
     }
