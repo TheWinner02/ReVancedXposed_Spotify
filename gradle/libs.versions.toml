@@ -1,5 +1,5 @@
 [versions]
-agp = "9.1.1"
+agp = "9.2.0"
 flatbuffersJava = "25.2.10"
 kotlin = "2.3.20"
 dexkit = "2.2.0"
@@ -14,6 +14,7 @@ junit = "6.0.3"
 jadx = "1.5.5"
 slf4j = "2.0.17"
 material = "1.13.0"
+nanohttpd = "2.3.1"
 
 [libraries]
 dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }
@@ -31,6 +32,7 @@ jadx-core = { group = "io.github.skylot", name = "jadx-core", version.ref = "jad
 slf4j-simple = { group = "org.slf4j", name = "slf4j-simple", version.ref = "slf4j" }
 kotlinx-serialization-protobuf = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-protobuf", version = "1.11.0" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+nanohttpd = { group = "org.nanohttpd", name = "nanohttpd", version.ref = "nanohttpd" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

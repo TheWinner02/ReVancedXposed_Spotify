@@ -9,6 +9,7 @@ import io.github.chsbuffer.revancedxposed.injectHostClassLoaderToSelf
 import io.github.chsbuffer.revancedxposed.spotify.misc.UnlockPremium
 import io.github.chsbuffer.revancedxposed.spotify.misc.logout.LogOutPatch
 import io.github.chsbuffer.revancedxposed.spotify.misc.privacy.SanitizeSharingLinks
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofClient
 import io.github.chsbuffer.revancedxposed.spotify.misc.widgets.FixThirdPartyLaunchersWidgets
 
 @Suppress("UNCHECKED_CAST")
@@ -19,6 +20,7 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
         ::UnlockPremium,
         ::LogOutPatch,
         ::FixThirdPartyLaunchersWidgets,
+        ::SpoofClient,
         ::NHB
     )
 

@@ -19,8 +19,6 @@ import io.github.chsbuffer.revancedxposed.spotify.RoundyUIHook
 import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
-import io.github.chsbuffer.revancedxposed.spotify.misc.login.Spoof
-import io.github.chsbuffer.revancedxposed.spotify.misc.login.setupIntegratedLogin
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.StealthMode
 import androidx.core.view.isNotEmpty
 
@@ -46,7 +44,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
 
-        Spoof.init(lpparam.classLoader, lpparam.appInfo.sourceDir, moduleApkPath!!)
+        // Spoof.init rimosso, logica spostata in SpotifyHook -> SpoofClient
 
         // --- NUOVO TRIGGER: LONG CLICK SU ICONA PROFILO ---
         XposedHelpers.findAndHookMethod(
