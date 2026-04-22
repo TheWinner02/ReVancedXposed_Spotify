@@ -1,14 +1,12 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.spoof
 
-import app.revanced.extension.shared.Logger
+import de.robv.android.xposed.XposedBridge
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.InputStream
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -24,16 +22,18 @@ object IosClientTokenService {
 
     fun serveClientTokenRequest(inputStream: InputStream): ClientTokenResponse? {
         return try {
-            val request = ProtoBuf.decodeFromByteArray<ClientTokenRequest>(inputStream.readBytes())
-            Logger.printInfo { "Request of type: ${request.requestType}" }
+            val bytes = inputStream.readBytes()
+            XposedBridge.log("SPOOF-PROXY: Ricevuta richiesta Protobuf (${bytes.size} bytes)")
+            val request = ProtoBuf.decodeFromByteArray<ClientTokenRequest>(bytes)
+            XposedBridge.log("SPOOF-PROXY: Tipo richiesta originale: ${request.requestType}")
             
             val response = getClientTokenResponse(request)
             if (response != null) {
-                Logger.printInfo { "Response of type: ${response.responseType}" }
+                XposedBridge.log("SPOOF-PROXY: Risposta iOS generata con successo (Tipo: ${response.responseType})")
             }
             response
         } catch (e: Exception) {
-            Logger.printException({ "Failed to parse request from input stream" }, e)
+            XposedBridge.log("SPOOF-PROXY: Errore nel servire la richiesta clienttoken: ${e.message}")
             null
         }
     }
@@ -41,7 +41,7 @@ object IosClientTokenService {
     private fun getClientTokenResponse(originalRequest: ClientTokenRequest): ClientTokenResponse? {
         var request = originalRequest
         if (request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST) {
-            Logger.printInfo { "Requesting iOS client token" }
+            XposedBridge.log("SPOOF-PROXY: Trasformazione richiesta Android -> iOS")
             val deviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
             request = newIOSClientTokenRequest(deviceId)
         }
@@ -49,13 +49,13 @@ object IosClientTokenService {
         return try {
             requestClientToken(request)
         } catch (e: Exception) {
-            Logger.printException({ "Failed to handle request" }, e)
+            XposedBridge.log("SPOOF-PROXY: Errore durante l'inoltro a Spotify: ${e.message}")
             null
         }
     }
 
     private fun newIOSClientTokenRequest(deviceId: String): ClientTokenRequest {
-        Logger.printInfo { "Creating new iOS client token request with device ID: $deviceId" }
+        XposedBridge.log("SPOOF-PROXY: Creazione nuovo token request iOS per device: $deviceId")
 
         val iosData = NativeIOSData(
             hwMachine = HARDWARE_MACHINE,
@@ -84,7 +84,10 @@ object IosClientTokenService {
     }
 
     private fun requestClientToken(clientTokenRequest: ClientTokenRequest): ClientTokenResponse? {
-        val body = ProtoBuf.encodeToByteArray(clientTokenRequest).toRequestBody("application/x-protobuf".toMediaType())
+        val bodyBytes = ProtoBuf.encodeToByteArray(clientTokenRequest)
+        val mediaType = OkHttpHelper.parseMediaType("application/x-protobuf")
+        val body = OkHttpHelper.createRequestBody(mediaType, bodyBytes)
+        
         val request = Request.Builder()
             .url("https://clienttoken.spotify.com/v1/clienttoken")
             .post(body)
@@ -94,7 +97,10 @@ object IosClientTokenService {
             .build()
 
         okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
+            if (!response.isSuccessful) {
+                XposedBridge.log("SPOOF-PROXY: Errore HTTP da Spotify: ${response.code}")
+                return null
+            }
             val responseBody = response.body
             return ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBody.bytes())
         }
