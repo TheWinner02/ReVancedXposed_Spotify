@@ -97,17 +97,22 @@ object IosClientTokenService {
             
             val builder = builderClass.getDeclaredConstructor().newInstance()
             
-            // Cerchiamo i metodi con firme multiple per gestire OkHttp 3/4/5
-            val urlMethod = builderClass.methods.find { it.name == "url" && it.parameterTypes.size == 1 && it.parameterTypes[0] == String::class.java }
+            // In alcune versioni R8/ProGuard di Spotify, i nomi sono offuscati (a, b, c...)
+            // Cerchiamo i metodi basandoci sulla firma dei parametri invece che sul nome
+            val urlMethod = builderClass.methods.find { it.parameterTypes.size == 1 && it.parameterTypes[0] == String::class.java && it.returnType == builderClass }
+                ?: builderClass.methods.find { it.name == "url" && it.parameterTypes.size == 1 && it.parameterTypes[0] == String::class.java }
                 ?: throw NoSuchMethodException("url(String) not found")
             
-            val postMethod = builderClass.methods.find { it.name == "post" && it.parameterTypes.size == 1 && requestBodyClass.isAssignableFrom(it.parameterTypes[0]) }
+            val postMethod = builderClass.methods.find { it.parameterTypes.size == 1 && requestBodyClass.isAssignableFrom(it.parameterTypes[0]) && it.returnType == builderClass }
+                ?: builderClass.methods.find { it.name == "post" && it.parameterTypes.size == 1 && requestBodyClass.isAssignableFrom(it.parameterTypes[0]) }
                 ?: throw NoSuchMethodException("post(RequestBody) not found")
                 
-            val headerMethod = builderClass.methods.find { it.name == "header" && it.parameterTypes.size == 2 && it.parameterTypes[0] == String::class.java && it.parameterTypes[1] == String::class.java }
+            val headerMethod = builderClass.methods.find { it.parameterTypes.size == 2 && it.parameterTypes[0] == String::class.java && it.parameterTypes[1] == String::class.java && it.returnType == builderClass }
+                ?: builderClass.methods.find { it.name == "header" && it.parameterTypes.size == 2 && it.parameterTypes[0] == String::class.java && it.parameterTypes[1] == String::class.java }
                 ?: throw NoSuchMethodException("header(String, String) not found")
                 
-            val buildMethod = builderClass.getMethod("build")
+            val buildMethod = builderClass.methods.find { it.parameterTypes.isEmpty() && it.returnType.name.endsWith(".Request") }
+                ?: builderClass.getMethod("build")
 
             urlMethod.invoke(builder, "https://clienttoken.spotify.com/v1/clienttoken")
             postMethod.invoke(builder, body)
