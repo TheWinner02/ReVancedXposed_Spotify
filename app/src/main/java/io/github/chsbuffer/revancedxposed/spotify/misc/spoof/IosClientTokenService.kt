@@ -6,7 +6,6 @@ import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.InputStream
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -85,56 +84,73 @@ object IosClientTokenService {
 
     private fun requestClientToken(clientTokenRequest: ClientTokenRequest): ClientTokenResponse? {
         val bodyBytes = ProtoBuf.encodeToByteArray(clientTokenRequest)
-        val mediaType = OkHttpHelper.parseMediaType("application/x-protobuf")
-        val body = OkHttpHelper.createRequestBody(mediaType, bodyBytes)
         
         return try {
             val loader = OkHttpClient::class.java.classLoader
             val builderClass = loader?.loadClass("okhttp3.Request\$Builder") ?: Class.forName("okhttp3.Request\$Builder")
             val requestClass = loader?.loadClass("okhttp3.Request") ?: Class.forName("okhttp3.Request")
             val requestBodyClass = loader?.loadClass("okhttp3.RequestBody") ?: Class.forName("okhttp3.RequestBody")
-            
+            val mediaTypeClass = loader?.loadClass("okhttp3.MediaType") ?: Class.forName("okhttp3.MediaType")
+            val mediaTypeCompanionClass = loader?.loadClass("okhttp3.MediaType\$Companion") ?: Class.forName("okhttp3.MediaType\$Companion")
+            val callClass = loader?.loadClass("okhttp3.Call") ?: Class.forName("okhttp3.Call")
+            val responseClass = loader?.loadClass("okhttp3.Response") ?: Class.forName("okhttp3.Response")
+            val responseBodyClass = loader?.loadClass("okhttp3.ResponseBody") ?: Class.forName("okhttp3.ResponseBody")
+
+            // 1. Creazione MediaType
+            // MediaType.e.b("application/x-protobuf")
+            val mediaTypeField = mediaTypeClass.getDeclaredField("e")
+            val mediaTypeCompanion = mediaTypeField.get(null)
+            val parseMethod = mediaTypeCompanionClass.getDeclaredMethod("b", String::class.java)
+            val mediaType = parseMethod.invoke(mediaTypeCompanion, "application/x-protobuf")
+
+            // 2. Creazione RequestBody
+            // RequestBody.c(mediaType, bodyBytes)
+            val createBodyMethod = requestBodyClass.getDeclaredMethod("c", mediaTypeClass, ByteArray::class.java)
+            val body = createBodyMethod.invoke(null, mediaType, bodyBytes)
+
+            // 3. Configurazione Builder
             val builder = builderClass.getDeclaredConstructor().newInstance()
-            val allMethods = builderClass.methods
             
-            XposedBridge.log("SPOOF-PROXY: Analisi ${allMethods.size} metodi in Request\$Builder")
-            allMethods.forEach { m ->
-                val p = m.parameterTypes.joinToString(",") { it.name }
-                XposedBridge.log("SPOOF-PROXY: Metodo: ${m.name}($p) -> ${m.returnType.name}")
-            }
-
-            // Ricerca basata su parametri (nomi offuscati non contano)
-            val urlMethod = allMethods.find { it.parameterTypes.size == 1 && it.parameterTypes[0] == String::class.java && it.returnType != Void.TYPE }
-                ?: throw NoSuchMethodException("URL method not found")
-
-            val headerMethod = allMethods.find { it.parameterTypes.size == 2 && it.parameterTypes[0] == String::class.java && it.parameterTypes[1] == String::class.java && it.returnType != Void.TYPE }
-                ?: throw NoSuchMethodException("Header method not found")
-
-            val genericMethod = allMethods.find { it.parameterTypes.size == 2 && it.parameterTypes[0] == String::class.java && (it.parameterTypes[1].name.contains("RequestBody") || requestBodyClass.isAssignableFrom(it.parameterTypes[1])) }
-                ?: throw NoSuchMethodException("Generic method (POST) not found")
-
-            val buildMethod = allMethods.find { it.parameterTypes.isEmpty() && (it.returnType == requestClass || it.returnType.name == requestClass.name) }
-                ?: throw NoSuchMethodException("Build method not found")
-
-            XposedBridge.log("SPOOF-PROXY: Identificati: URL=${urlMethod.name}, HEADER=${headerMethod.name}, POST=${genericMethod.name}, BUILD=${buildMethod.name}")
-
+            // builder.g(url)
+            val urlMethod = builderClass.getDeclaredMethod("g", String::class.java)
             urlMethod.invoke(builder, "https://clienttoken.spotify.com/v1/clienttoken")
-            genericMethod.invoke(builder, "POST", body)
+            
+            // builder.e("POST", body)
+            val methodMethod = builderClass.getDeclaredMethod("e", String::class.java, requestBodyClass)
+            methodMethod.invoke(builder, "POST", body)
+            
+            // builder.a(key, value)
+            val headerMethod = builderClass.getDeclaredMethod("a", String::class.java, String::class.java)
             headerMethod.invoke(builder, "Content-Type", "application/x-protobuf")
             headerMethod.invoke(builder, "Accept", "application/x-protobuf")
             headerMethod.invoke(builder, "User-Agent", IOS_USER_AGENT)
             
-            val finalRequest = buildMethod.invoke(builder) as Request
+            // 4. Creazione Request (tramite costruttore)
+            val requestConstructor = requestClass.getDeclaredConstructor(builderClass)
+            val request = requestConstructor.newInstance(builder)
 
-            okHttpClient.newCall(finalRequest).execute().use { response ->
-                if (!response.isSuccessful) {
-                    XposedBridge.log("SPOOF-PROXY: Errore HTTP da Spotify: ${response.code}")
-                    return null
-                }
-                ProtoBuf.decodeFromByteArray<ClientTokenResponse>(response.body.bytes())
-            }
+            // 5. Esecuzione Call
+            // okHttpClient.a(request) -> Call
+            val newCallMethod = OkHttpClient::class.java.getDeclaredMethod("a", requestClass)
+            val call = newCallMethod.invoke(okHttpClient, request)
+            
+            // call.d() -> Response
+            val executeMethod = callClass.getDeclaredMethod("d")
+            val response = executeMethod.invoke(call)
+
+            // 6. Lettura Risposta
+            // response.g -> ResponseBody (field)
+            val bodyField = responseClass.getDeclaredField("g")
+            val responseBody = bodyField.get(response)
+            
+            // responseBody.d() -> byte[]
+            val bytesMethod = responseBodyClass.getDeclaredMethod("d")
+            val responseBytes = bytesMethod.invoke(responseBody) as ByteArray
+
+            ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBytes)
         } catch (e: Exception) {
-            XposedBridge.log("SPOOF-PROXY: Errore riflessione critica OkHttp: ${e.message}")
+            XposedBridge.log("SPOOF-PROXY: Errore riflessione fisica OkHttp: ${e.message}")
+            e.printStackTrace()
             null
         }
     }
