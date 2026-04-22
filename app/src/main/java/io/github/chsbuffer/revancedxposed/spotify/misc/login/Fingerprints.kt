@@ -32,6 +32,7 @@ object Fingerprints {
             returnType = "V"
             // Aggiungiamo i modificatori per restringere il campo dai 12 risultati
             accessFlags(AccessFlags.PUBLIC)
+            usingStrings("App-Platform")
         }
     }
 }
