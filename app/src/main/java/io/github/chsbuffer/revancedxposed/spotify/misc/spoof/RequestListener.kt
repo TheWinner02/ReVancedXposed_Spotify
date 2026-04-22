@@ -2,13 +2,9 @@ package io.github.chsbuffer.revancedxposed.spotify.misc.spoof
 
 import de.robv.android.xposed.XposedBridge
 import fi.iki.elonen.NanoHTTPD
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.encodeToByteArray
-import kotlinx.serialization.protobuf.ProtoBuf
 import java.io.ByteArrayInputStream
 import java.io.IOException
 
-@OptIn(ExperimentalSerializationApi::class)
 class RequestListener(port: Int) : NanoHTTPD(port) {
     init {
         try {
@@ -26,10 +22,10 @@ class RequestListener(port: Int) : NanoHTTPD(port) {
         }
 
         XposedBridge.log("SPOOF-PROXY: Intercettata richiesta token")
-        
+
         val inputStream = session.inputStream
         val contentLength = session.headers["content-length"]?.toLong() ?: 0L
-        
+
         val limitedInputStream = object : java.io.FilterInputStream(inputStream) {
             private var remaining = contentLength
             override fun read(): Int {
@@ -47,11 +43,12 @@ class RequestListener(port: Int) : NanoHTTPD(port) {
             override fun available(): Int = minOf(super.available().toLong(), remaining).toInt()
         }
 
-        val clientTokenResponse = IosClientTokenService.serveClientTokenRequest(limitedInputStream)
-        return if (clientTokenResponse != null) {
-            val bytes = ProtoBuf.encodeToByteArray(clientTokenResponse)
-            XposedBridge.log("SPOOF-PROXY: Invio risposta iOS spoofata (${bytes.size} bytes)")
-            newFixedLengthResponse(Response.Status.OK, "application/x-protobuf", ByteArrayInputStream(bytes), bytes.size.toLong())
+        // Ora responseBytes è un ByteArray puro proveniente da Spotify
+        val responseBytes = IosClientTokenService.serveClientTokenRequest(limitedInputStream)
+
+        return if (responseBytes != null) {
+            XposedBridge.log("SPOOF-PROXY: Invio risposta a liborbit (${responseBytes.size} bytes)")
+            newFixedLengthResponse(Response.Status.OK, "application/x-protobuf", ByteArrayInputStream(responseBytes), responseBytes.size.toLong())
         } else {
             XposedBridge.log("SPOOF-PROXY: Fallimento generazione token iOS")
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/x-protobuf", null)

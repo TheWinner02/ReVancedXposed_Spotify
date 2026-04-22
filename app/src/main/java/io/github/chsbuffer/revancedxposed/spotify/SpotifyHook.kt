@@ -59,7 +59,7 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
                         if (url.contains("ads", true) ||
                             url.contains("tracking", true)
                         ) {
-                            XposedBridge.log("G BLOCK: $url")
+                            XposedBridge.log("NBH BLOCK: $url")
                             param.result = null
                         }
                     }
