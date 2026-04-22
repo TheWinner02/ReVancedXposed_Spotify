@@ -16,12 +16,12 @@ class RequestListener(port: Int) : NanoHTTPD(port) {
     }
 
     override fun serve(session: IHTTPSession): Response {
-        val uri = session.uri
-        if (uri != "/v1/clienttoken") {
-            return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/x-protobuf", null)
+        // Accettiamo qualsiasi URI che contenga clienttoken
+        if (!session.uri.contains("clienttoken")) {
+            return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
         }
 
-        XposedBridge.log("SPOOF-PROXY: Intercettata richiesta token")
+        XposedBridge.log("SPOOF-PROXY: Gestione richiesta per ${session.uri}")
 
         val inputStream = session.inputStream
         val contentLength = session.headers["content-length"]?.toLong() ?: 0L
@@ -47,10 +47,14 @@ class RequestListener(port: Int) : NanoHTTPD(port) {
         val responseBytes = IosClientTokenService.serveClientTokenRequest(limitedInputStream)
 
         return if (responseBytes != null) {
-            XposedBridge.log("SPOOF-PROXY: Invio risposta a liborbit (${responseBytes.size} bytes)")
-            newFixedLengthResponse(Response.Status.OK, "application/x-protobuf", ByteArrayInputStream(responseBytes), responseBytes.size.toLong())
+            // Inviamo i byte grezzi senza re-encodare in Protobuf
+            newFixedLengthResponse(
+                Response.Status.OK,
+                "application/x-protobuf",
+                ByteArrayInputStream(responseBytes),
+                responseBytes.size.toLong()
+            )
         } else {
-            XposedBridge.log("SPOOF-PROXY: Fallimento generazione token iOS")
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/x-protobuf", null)
         }
     }

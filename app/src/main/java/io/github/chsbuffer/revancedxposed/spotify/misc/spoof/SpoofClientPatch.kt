@@ -1,5 +1,6 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.spoof
 
+import android.R.attr.port
 import android.content.pm.PackageInfo
 import android.content.pm.Signature
 import android.os.Build
@@ -25,10 +26,13 @@ fun SpotifyHook.SpoofClient() {
 
     // 1. Hook di Sistema Immediati (Build Spoof)
     runCatching {
+        XposedHelpers.setStaticObjectField(Build::class.java, "DEVICE", "iPhone")
+        XposedHelpers.setStaticObjectField(Build::class.java, "PRODUCT", "iPhone16,1")
         XposedHelpers.setStaticObjectField(Build::class.java, "MODEL", "iPhone16,1")
         XposedHelpers.setStaticObjectField(Build::class.java, "MANUFACTURER", "Apple")
         XposedHelpers.setStaticObjectField(Build::class.java, "BRAND", "apple")
         XposedHelpers.setStaticObjectField(Build.VERSION::class.java, "RELEASE", "17.7.2")
+        System.setProperty("http.agent", iosUserAgent)
         XposedBridge.log("SPOOF-CLIENT: Build properties modificate in iOS")
     }.onFailure {
         XposedBridge.log("SPOOF-CLIENT: Errore durante Build spoof: ${it.message}")
@@ -167,18 +171,14 @@ private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId
         methods.forEach { mData ->
             runCatching {
                 XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        val arg = param.args?.getOrNull(0) ?: return
+                    override fun beforeHookedMethod(p: MethodHookParam) {
+                        val originalUrl = p.args[0] as String
+                        if (originalUrl.contains("127.0.0.1")) return // Non intercettare se è già il proxy
 
-                        if (arg is MutableMap<*, *>) {
-                            @Suppress("UNCHECKED_CAST")
-                            val map = arg as MutableMap<String, Any?>
-                            if (map.containsKey("platform") || map.containsKey("App-Platform")) {
-                                XposedBridge.log("SPOOF-CLIENT [DEX]: Patching login map -> ios")
-                                map["platform"] = "ios"
-                                map["App-Platform"] = "ios"
-                                map["os"] = "ios"
-                            }
+                        if (originalUrl.contains("https://clienttoken.spotify.com/v1/clienttoken") ||
+                            (originalUrl.contains("clienttoken") && !originalUrl.contains("google"))) {
+                            p.args[0] = "http://127.0.0.1:$port/v1/clienttoken"
+                            XposedBridge.log("SPOOF-CLIENT: REDIRECT ESEGUITO -> ${p.args[0]}")
                         }
                     }
                 })

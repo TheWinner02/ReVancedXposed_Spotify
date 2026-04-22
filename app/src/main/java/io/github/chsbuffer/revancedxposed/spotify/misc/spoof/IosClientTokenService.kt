@@ -102,6 +102,8 @@ object IosClientTokenService {
             headerMethod.invoke(builder, "Content-Type", "application/x-protobuf")
             headerMethod.invoke(builder, "Accept", "application/x-protobuf")
             headerMethod.invoke(builder, "User-Agent", IOS_USER_AGENT)
+            headerMethod.invoke(builder, "X-Client-Id", IOS_CLIENT_ID)
+            headerMethod.invoke(builder, "App-Platform", "ios")
 
             val requestConstructor = requestClass.getDeclaredConstructor(builderClass)
             val request = requestConstructor.newInstance(builder)
@@ -116,7 +118,6 @@ object IosClientTokenService {
             val responseBody = bodyField.get(response)
 
             val bytesMethod = responseBodyClass.getDeclaredMethod("d")
-
             // RESTITUISCE I BYTE CRUDI INVECE DI DECODIFICARLI
             bytesMethod.invoke(responseBody) as ByteArray
 
