@@ -19,7 +19,7 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
         ::UnlockPremium,
         ::LogOutPatch,
         ::FixThirdPartyLaunchersWidgets,
-        ::g
+        ::NHB
     )
 
     // ══════════════════════════════════════════════════════
@@ -30,9 +30,9 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
     }
 
     // ══════════════════════════════════════════════════════
-    // G → NATIVE HTTP BLOCK
+    // NHB → NATIVE HTTP BLOCK
     // ══════════════════════════════════════════════════════
-    fun g() {
+    fun NHB() {
         runCatching {
 
             val cl = classLoader
@@ -57,7 +57,7 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
                         if (url.contains("ads", true) ||
                             url.contains("tracking", true)
                         ) {
-                            XposedBridge.log("G BLOCK: $url")
+                            XposedBridge.log("NHB BLOCK: $url")
                             param.result = null
                         }
                     }
@@ -65,7 +65,7 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
             )
 
         }.onFailure {
-            XposedBridge.log("G error -> ${it.message}")
+            XposedBridge.log("NHB error -> ${it.message}")
         }
     }
 }
