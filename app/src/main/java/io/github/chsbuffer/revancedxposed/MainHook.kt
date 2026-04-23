@@ -99,7 +99,6 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             Utils.showToastLong("ReVanced Xposed FE is initializing, please wait...")
 
             // --- BLOCCO PREMIUM ---
-            // Ora è isolato: se Roundy sopra crasha, questo verrà comunque eseguito!
             try {
                 if (prefs.getBoolean("enable_premium", true)) {
                     hooksByPackage[lpparam.packageName]?.invoke()?.Hook()

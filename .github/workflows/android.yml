@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ "alpha1" ]
+    branches: [ "alpha_test" ]
   schedule:
     - cron: '0 0 * * *'
 
