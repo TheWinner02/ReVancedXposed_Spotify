@@ -70,8 +70,15 @@ fun SpotifyHook.SpoofClient() {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    // 1. Blocco Pubblicità e Tracking (NHB Integrato)
-                    if (url.contains("ads", true) || url.contains("tracking", true)) {
+                    // 1. Blocco Pubblicità, Tracking e Crash (Unificato)
+                    val isAdOrTracking = url.contains("/ads/", true) || 
+                                       url.contains("/ad-logic/", true) ||
+                                       url.contains("analytics.spotify.com", true) ||
+                                       url.contains("tracking.spotify.com", true) ||
+                                       url.contains("log.spotify.com", true) ||
+                                       url.contains("crashdump.spotify.com", true)
+
+                    if (isAdOrTracking) {
                         XposedBridge.log("SPOOF-CLIENT [NHB]: Blocked -> $url")
                         param.result = null
                         return

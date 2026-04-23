@@ -39,43 +39,5 @@ class AdBlockHook(private val lpparam: LoadPackageParam) {
         } catch (e: Throwable) {
             XposedBridge.log("AdBlocker: Errore in LoadedFlags -> ${e.message}")
         }
-
-
-        // ==========================================
-        // 2. HTTP BLOCKER
-        // ==========================================
-        // Intercetta il client HTTP nativo di Spotify e blocca le richieste verso i server Ads
-        try {
-            val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
-            val httpRequest = cl.loadClass("com.spotify.core.http.HttpRequest")
-            val urlField = httpRequest.getDeclaredField("url")
-            urlField.isAccessible = true
-
-            // Qui inseriamo i veri prefissi pubblicitari.
-            val bannedPrefixes = arrayOf(
-                "https://spclient.wg.spotify.com/ads/",
-                "https://spclient.wg.spotify.com/ad-logic/",
-                "https://audio-ak-spotify-com.akamaized.net/audio/ads/",
-                "https://analytics.spotify.com",
-                "https://tracking.spotify.com",
-                "https://log.spotify.com",
-                "https://crashdump.spotify.com"
-            )
-
-            XposedBridge.hookAllMethods(httpConnectionImpl, "send", object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val req = param.args[0]
-                    val url = urlField.get(req) as String
-
-                    if (bannedPrefixes.any { url.startsWith(it) }) {
-                        XposedBridge.log("AdBlocker: Bloccata richiesta nativa HTTP -> $url")
-                        param.result = null // Questo uccide la richiesta alla radice
-                    }
-                }
-            })
-            XposedBridge.log("AdBlocker: Native HTTP Blocker attivato")
-        } catch (e: Throwable) {
-            XposedBridge.log("AdBlocker: Errore in Http Blocker -> ${e.message}")
-        }
     }
 }
