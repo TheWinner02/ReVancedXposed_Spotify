@@ -16,7 +16,6 @@ object IosClientTokenService {
     private const val CLIENT_VERSION = "iphone-9.0.58.558.g200011c"
     private const val SYSTEM_VERSION = "17.7.2"
     private const val HARDWARE_MACHINE = "iPhone16,1"
-
     private const val IOS_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
 
     fun serveClientTokenRequest(inputStream: InputStream, originalHeaders: Map<String, String>): ByteArray? {
@@ -30,26 +29,21 @@ object IosClientTokenService {
                 null
             }
 
-            if (request != null) {
-                XposedBridge.log("SPOOF-PROXY: Tipo richiesta originale: ${request.requestType}")
+            if (request != null && request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST) {
+                XposedBridge.log("SPOOF-PROXY: Trasformazione CLIENT_DATA -> Full iOS")
+                val originalDeviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
                 
-                if (request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST) {
-                    XposedBridge.log("SPOOF-PROXY: Trasformazione CLIENT_DATA -> Full iOS")
-                    val originalDeviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
-                    
-                    // Deriviamo un deviceId iOS costante basato su quello Android per mantenere consistenza
-                    val iosDeviceId = UUID.nameUUIDFromBytes(originalDeviceId.toByteArray())
-                        .toString().replace("-", "").take(16)
-                    
-                    val transformedRequest = newIOSClientTokenRequest(iosDeviceId)
-                    val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
-                    
-                    XposedBridge.log("SPOOF-PROXY: Inviando richiesta iOS (DeviceID: $iosDeviceId)")
-                    return requestClientTokenRaw(bodyBytes, useIosHeaders = true, originalHeaders)
-                }
+                val iosDeviceId = UUID.nameUUIDFromBytes(originalDeviceId.toByteArray())
+                    .toString().replace("-", "").take(16)
+                
+                val transformedRequest = newIOSClientTokenRequest(iosDeviceId)
+                val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
+                
+                XposedBridge.log("SPOOF-PROXY: Inviando richiesta iOS (DeviceID: $iosDeviceId)")
+                return requestClientTokenRaw(bodyBytes, useIosHeaders = true, originalHeaders)
             }
             
-            XposedBridge.log("SPOOF-PROXY: Inoltro byte originali (Challenge o altro). Preservo coerenza.")
+            XposedBridge.log("SPOOF-PROXY: Inoltro byte originali (Challenge o altro).")
             requestClientTokenRaw(bytes, useIosHeaders = false, originalHeaders)
         } catch (e: Exception) {
             XposedBridge.log("SPOOF-PROXY: Errore nel servire la richiesta: ${e.message}")
@@ -75,10 +69,9 @@ object IosClientTokenService {
             val connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "POST"
             connection.doOutput = true
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
 
-            // Copiamo header originali
             originalHeaders.forEach { (key, value) ->
                 if (!key.equals("host", ignoreCase = true) && 
                     !key.equals("content-length", ignoreCase = true) &&
@@ -100,12 +93,17 @@ object IosClientTokenService {
             val responseCode = connection.responseCode
             if (responseCode == 200) {
                 val responseBytes = connection.inputStream.readBytes()
-                XposedBridge.log("SPOOF-PROXY: Risposta ricevuta (200 OK, ${responseBytes.size} bytes)")
-                responseBytes
+                
+                // USAGE della classe ClientTokenResponse per validazione log
+                runCatching {
+                    val resp = ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBytes)
+                    val tokenPreview = resp.grantedToken?.token?.take(10) ?: "null"
+                    XposedBridge.log("SPOOF-PROXY: Token iOS ottenuto con successo: $tokenPreview... (Scade tra: ${resp.grantedToken?.expiresAfterSeconds}s)")
+                }
+                
+                responseBytes // Ora ritorniamo correttamente i byte!
             } else {
-                val errorBytes = connection.errorStream?.readBytes()
-                val errorMsg = errorBytes?.let { String(it) } ?: connection.responseMessage
-                XposedBridge.log("SPOOF-PROXY: Errore risposta Spotify ($responseCode): $errorMsg")
+                XposedBridge.log("SPOOF-PROXY: Errore risposta Spotify ($responseCode)")
                 null
             }
         } catch (e: Exception) {

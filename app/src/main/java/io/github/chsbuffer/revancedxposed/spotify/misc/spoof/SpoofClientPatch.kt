@@ -6,7 +6,6 @@ import android.os.Build
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
-import io.github.chsbuffer.revancedxposed.parameters
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import org.luckypray.dexkit.DexKitBridge
 import java.util.concurrent.Executors
@@ -21,23 +20,18 @@ fun SpotifyHook.SpoofClient() {
     val iosUserAgent = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
     
-    XposedBridge.log("SPOOF-CLIENT: Inizializzazione logica iOS Spoofing")
+    XposedBridge.log("SPOOF-CLIENT: Inizializzazione Raffinata iOS Spoofing")
 
-    // 1. Hook di Sistema (Build Spoof)
+    // 1. Hook di Sistema (Semplificato per evitare blocchi Samsung/PlayProtect)
     runCatching {
-        XposedHelpers.setStaticObjectField(Build::class.java, "DEVICE", "iPhone")
-        XposedHelpers.setStaticObjectField(Build::class.java, "PRODUCT", "iPhone16,1")
-        XposedHelpers.setStaticObjectField(Build::class.java, "MODEL", "iPhone16,1")
+        System.setProperty("http.agent", iosUserAgent)
+        // Modifichiamo solo i parametri minimi necessari per l'identità core
         XposedHelpers.setStaticObjectField(Build::class.java, "MANUFACTURER", "Apple")
         XposedHelpers.setStaticObjectField(Build::class.java, "BRAND", "apple")
         XposedHelpers.setStaticObjectField(Build.VERSION::class.java, "RELEASE", "17.7.2")
-        System.setProperty("http.agent", iosUserAgent)
-        XposedBridge.log("SPOOF-CLIENT: Build properties modificate in iOS")
-    }.onFailure {
-        XposedBridge.log("SPOOF-CLIENT: Errore durante Build spoof: ${it.message}")
     }
 
-    // 2. Signature Spoof
+    // 2. Signature Spoof (Rimane invariato, necessario per login)
     runCatching {
         val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
         XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
@@ -51,40 +45,17 @@ fun SpotifyHook.SpoofClient() {
                 }
             }
         })
-    }.onFailure {
-        XposedBridge.log("SPOOF-CLIENT: Errore durante Signature spoof hook: ${it.message}")
     }
 
     // 3. Proxy Listener
     if (listener == null) {
         runCatching {
             listener = RequestListener(port)
-            XposedBridge.log("SPOOF-CLIENT: RequestListener avviato sulla porta $port")
-        }.onFailure {
-            XposedBridge.log("SPOOF-CLIENT: Failed to launch listener -> ${it.message}")
+            XposedBridge.log("SPOOF-CLIENT: RequestListener attivo su $port")
         }
     }
 
-    // 4. Hook ApplicationScopeConfiguration
-    runCatching {
-        val configClass = classLoader.loadClass("com.spotify.connectivity.ApplicationScopeConfiguration")
-        
-        XposedHelpers.findAndHookMethod(configClass, "setClientId", String::class.java, object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                param.args[0] = iosClientId
-            }
-        })
-
-        XposedHelpers.findAndHookMethod(configClass, "setDefaultHTTPUserAgent", String::class.java, object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                param.args[0] = iosUserAgent
-            }
-        })
-    }.onFailure {
-        XposedBridge.log("SPOOF-CLIENT: ApplicationScopeConfiguration hooks error -> ${it.message}")
-    }
-
-    // 5. Hook NativeHttpConnection
+    // 4. Hook NativeHttpConnection (Surgical Mode)
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -99,20 +70,20 @@ fun SpotifyHook.SpoofClient() {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    val isTokenRequest = url.contains("clienttoken.spotify.com")
-
-                    if (isTokenRequest) {
+                    // 1. Redirect Token (Il cuore del bypass)
+                    if (url.contains("clienttoken.spotify.com")) {
                         val proxyUrl = "http://127.0.0.1:$port/v1/clienttoken"
-                        XposedBridge.log("SPOOF-CLIENT: Redirecting $url -> $proxyUrl")
                         urlField.set(req, proxyUrl)
-                    } else if (url.contains("platform=android") || url.contains("device=android")) {
-                        val newUrl = url.replace("platform=android", "platform=ios")
-                                        .replace("device=android", "device=ios")
-                        urlField.set(req, newUrl)
+                        return
                     }
 
-                    // Forziamo User-Agent e ClientID iOS su TUTTE le chiamate native tranne il token (gestito dal proxy)
-                    if (!isTokenRequest) {
+                    // 2. Spoof selettivo solo per domini Spotify
+                    // Evitiamo di rompere chiamate a Google, Samsung o Analytics di sistema
+                    if (url.contains("spotify.com") || url.contains("scdn.co")) {
+                        if (url.contains("platform=android")) {
+                            urlField.set(req, url.replace("platform=android", "platform=ios"))
+                        }
+                        
                         runCatching {
                             val headersField = req.javaClass.declaredFields.find { 
                                 it.type == Map::class.java || it.type.name.contains("headers", ignoreCase = true) 
@@ -132,96 +103,30 @@ fun SpotifyHook.SpoofClient() {
                 }
             }
         )
-    }.onFailure {
-        XposedBridge.log("SPOOF-CLIENT: NativeHttpConnection hook error -> ${it.message}")
     }
 
-    // 6. Deep Spoof con DexKit
+    // 5. Deep Spoof DexKit (Ridotto per evitare crash/blocchi boot)
     executor.schedule({
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir
             DexKitBridge.create(apkPath).use { bridge ->
-                applyDexKitDeepHooks(bridge, classLoader, iosClientId, iosUserAgent)
-            }
-        }.onFailure {
-            XposedBridge.log("SPOOF-CLIENT [FATAL]: Errore durante l'inizializzazione DexKit: ${it.message}")
-        }
-    }, 5, TimeUnit.SECONDS)
-}
-
-private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId: String, ua: String) {
-    XposedBridge.log("SPOOF-CLIENT [DEX]: Inizio Scansione fingerprints")
-
-    // 1. Forza il ritorno dei getter "android" -> "ios"
-    runCatching {
-        val methods1 = bridge.findMethod {
-            matcher {
-                returnType = "java.lang.String"
-                usingStrings("android")
-            }
-        }
-        methods1.forEach { mData ->
-            XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    param.result = "ios"
-                }
-            })
-        }
-    }
-
-    // 2. Forza gli header nelle mappe di login e protobuf dinamici
-    runCatching {
-        val methods = bridge.findMethod {
-            matcher {
-                parameters("Ljava/util/Map;")
-                usingStrings("App-Platform")
-            }
-        }
-
-        XposedBridge.log("SPOOF-CLIENT [DEX]: Trovati ${methods.size} metodi per loginMap")
-
-        methods.forEach { mData ->
-            runCatching {
-                XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
-                    override fun afterHookedMethod(p: MethodHookParam) {
-                        val map = p.args[0] as? MutableMap<String, String> ?: return
-                        if (map.containsKey("App-Platform")) {
-                            map["App-Platform"] = "ios"
-                            map["User-Agent"] = ua
-                            map["X-Client-Id"] = clientId
-                        }
+                // Hookiamo solo i metodi che ritornano "android" -> "ios"
+                val methods = bridge.findMethod {
+                    matcher {
+                        returnType = "java.lang.String"
+                        usingStrings("android")
                     }
-                })
-            }
-        }
-    }
-
-    // 3. Hook per ClientID e UA via DexKit
-    listOf(
-        "setClientId" to clientId,
-        "setDefaultHTTPUserAgent" to ua
-    ).forEach { (methodName, value) ->
-        runCatching {
-            val methods = bridge.findMethod {
-                matcher {
-                    name = methodName
-                    parameters("Ljava/lang/String;")
                 }
-            }
-            
-            methods.forEach { mData ->
-                runCatching {
-                    XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
-                        override fun beforeHookedMethod(p: MethodHookParam) { 
-                            p.args[0] = value 
-                        }
-                    })
+                methods.forEach { mData ->
+                    runCatching {
+                        XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
+                            override fun beforeHookedMethod(p: MethodHookParam) { p.result = "ios" }
+                        })
+                    }
                 }
             }
         }
-    }
-
-    XposedBridge.log("SPOOF-CLIENT [DEX]: Scansione completata.")
+    }, 10, TimeUnit.SECONDS) // Delay aumentato per stabilità
 }
 
 private fun hexToBytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
