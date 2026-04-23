@@ -34,19 +34,20 @@ object IosClientTokenService {
                 null
             }
 
-            if (request != null && request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST) {
-                XposedBridge.log("SPOOF-PROXY: Trasformazione CLIENT_DATA -> Full iOS")
-                val originalDeviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
-                
-                val iosDeviceId = UUID.nameUUIDFromBytes(originalDeviceId.toByteArray())
-                    .toString().replace("-", "").take(16)
-                
-                val transformedRequest = newIOSClientTokenRequest(iosDeviceId)
-                val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
-                
-                XposedBridge.log("SPOOF-PROXY: Inviando richiesta iOS (DeviceID: $iosDeviceId)")
-                return requestClientTokenRaw(bodyBytes, useIosHeaders = true, originalHeaders)
-            }
+                if (request != null && request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST) {
+                    XposedBridge.log("SPOOF-PROXY: Trasformazione CLIENT_DATA -> Full iOS")
+                    val originalDeviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
+                    
+                    // Generiamo un vero UUID in formato iOS (costante per lo stesso deviceId Android)
+                    val iosDeviceId = UUID.nameUUIDFromBytes(originalDeviceId.toByteArray())
+                        .toString().uppercase()
+                    
+                    val transformedRequest = newIOSClientTokenRequest(iosDeviceId)
+                    val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
+                    
+                    XposedBridge.log("SPOOF-PROXY: Inviando richiesta iOS (DeviceID: $iosDeviceId)")
+                    return requestClientTokenRaw(bodyBytes, useIosHeaders = true, originalHeaders)
+                }
             
             XposedBridge.log("SPOOF-PROXY: Inoltro byte originali (Challenge o altro).")
             requestClientTokenRaw(bytes, useIosHeaders = false, originalHeaders)
