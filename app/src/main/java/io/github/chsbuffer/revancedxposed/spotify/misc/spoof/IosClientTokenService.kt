@@ -6,10 +6,11 @@ import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import java.io.InputStream
-import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.URL
 import java.util.UUID
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.HostnameVerifier
 
 @OptIn(ExperimentalSerializationApi::class)
 object IosClientTokenService {
@@ -18,6 +19,9 @@ object IosClientTokenService {
     private const val SYSTEM_VERSION = "17.7.2"
     private const val HARDWARE_MACHINE = "iPhone16,1"
     private const val IOS_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
+    
+    // IP diretto di Spotify ClientToken per bypassare blocchi DNS
+    private const val FALLBACK_IP = "35.186.224.24"
 
     fun serveClientTokenRequest(inputStream: InputStream, originalHeaders: Map<String, String>): ByteArray? {
         return try {
@@ -47,7 +51,7 @@ object IosClientTokenService {
             XposedBridge.log("SPOOF-PROXY: Inoltro byte originali (Challenge o altro).")
             requestClientTokenRaw(bytes, useIosHeaders = false, originalHeaders)
         } catch (e: Exception) {
-            XposedBridge.log("SPOOF-PROXY: Errore nel servire la richiesta: ${e.message}")
+            XposedBridge.log("SPOOF-PROXY: Errore critico nel servire la richiesta: ${e.message}")
             null
         }
     }
@@ -65,32 +69,29 @@ object IosClientTokenService {
     }
 
     private fun requestClientTokenRaw(bodyBytes: ByteArray, useIosHeaders: Boolean, originalHeaders: Map<String, String>): ByteArray? {
-        val maxRetries = 2
-        var attempt = 0
+        val host = "clienttoken.spotify.com"
         
-        while (attempt <= maxRetries) {
-            try {
-                val host = "clienttoken.spotify.com"
-                
-                // Proviamo a risolvere l'IP. Se fallisce, usiamo un IP di fallback conosciuto per bypassare il blocco DNS di sistema
-                val address = try {
-                    InetAddress.getByName(host).hostAddress
-                } catch (e: Exception) {
-                    XposedBridge.log("SPOOF-PROXY: DNS Blocked! Provo IP Fallback (35.186.224.24)")
-                    "35.186.224.24" // IP diretto di Spotify ClientToken
-                }
+        // Strategia: Prima proviamo DNS, poi IP diretto con Bypass SSL
+        val addresses = mutableListOf<String>()
+        val dnsAddress = runCatching { InetAddress.getByName(host).hostAddress }.getOrNull()
+        dnsAddress?.let { addresses.add(it) }
+        addresses.add(FALLBACK_IP)
 
-                XposedBridge.log("SPOOF-PROXY: Tentativo connessione a $address (Tentativo ${attempt + 1})")
+        for (address in addresses.distinct()) {
+            try {
+                XposedBridge.log("SPOOF-PROXY: Tentativo connessione a $address")
                 
                 val url = URL("https://$address/v1/clienttoken")
-                val connection = url.openConnection() as HttpURLConnection
+                val connection = url.openConnection() as HttpsURLConnection
+                
+                // Bypass validazione hostname per permettere l'uso dell'IP diretto con SSL Spotify
+                connection.hostnameVerifier = HostnameVerifier { _, _ -> true }
+                
                 connection.setRequestProperty("Host", host)
                 connection.requestMethod = "POST"
                 connection.doOutput = true
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
-                
-                // Disabilita cache e forza connessione pulita
+                connection.connectTimeout = 8000
+                connection.readTimeout = 8000
                 connection.useCaches = false
 
                 originalHeaders.forEach { (key, value) ->
@@ -111,22 +112,24 @@ object IosClientTokenService {
 
                 connection.outputStream.use { it.write(bodyBytes) }
 
-                val responseCode = connection.responseCode
-                if (responseCode == 200) {
+                if (connection.responseCode == 200) {
                     val responseBytes = connection.inputStream.readBytes()
+                    
+                    // UTILIZZO ClientTokenResponse per validazione e log
                     runCatching {
-                        ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBytes)
-                        XposedBridge.log("SPOOF-PROXY: Token iOS ottenuto con successo!")
+                        val resp = ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBytes)
+                        val expires = resp.grantedToken?.expiresAfterSeconds ?: 0
+                        XposedBridge.log("SPOOF-PROXY: Token iOS ottenuto con successo! (Scade tra: ${expires}s)")
                     }
+
+                    XposedBridge.log("SPOOF-PROXY: Successo! Ricevuti ${responseBytes.size} byte.")
                     return responseBytes
                 } else {
-                    XposedBridge.log("SPOOF-PROXY: Errore risposta Spotify ($responseCode)")
+                    XposedBridge.log("SPOOF-PROXY: Server ha risposto con ${connection.responseCode}")
                 }
-            } catch (_: Exception) {
-                XposedBridge.log("SPOOF-PROXY: Fallimento tentativo ${attempt + 1}")
+            } catch (e: Exception) {
+                XposedBridge.log("SPOOF-PROXY: Fallimento su $address: ${e.message}")
             }
-            attempt++
-            Thread.sleep(1000) // Aspetta un secondo prima di riprovare
         }
         return null
     }
