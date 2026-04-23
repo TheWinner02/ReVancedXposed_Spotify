@@ -70,7 +70,14 @@ fun SpotifyHook.SpoofClient() {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    // 1. Redirect Token (Il cuore del bypass)
+                    // 1. Blocco Pubblicità e Tracking (NHB Integrato)
+                    if (url.contains("ads", true) || url.contains("tracking", true)) {
+                        XposedBridge.log("SPOOF-CLIENT [NHB]: Blocked -> $url")
+                        param.result = null
+                        return
+                    }
+
+                    // 2. Redirect Token (Il cuore del bypass)
                     if (url.contains("clienttoken.spotify.com")) {
                         val proxyUrl = "http://127.0.0.1:$port/v1/clienttoken"
                         urlField.set(req, proxyUrl)
