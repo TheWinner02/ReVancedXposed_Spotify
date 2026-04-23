@@ -8,6 +8,7 @@ import kotlinx.serialization.protobuf.ProtoBuf
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 
 @OptIn(ExperimentalSerializationApi::class)
 object IosClientTokenService {
@@ -32,20 +33,23 @@ object IosClientTokenService {
             if (request != null) {
                 XposedBridge.log("SPOOF-PROXY: Tipo richiesta originale: ${request.requestType}")
                 
-                // Trasformiamo SEMPRE CLIENT_DATA_REQUEST per garantire che il corpo sia 100% iOS
                 if (request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST) {
                     XposedBridge.log("SPOOF-PROXY: Trasformazione CLIENT_DATA -> Full iOS")
-                    val deviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
-                    val transformedRequest = newIOSClientTokenRequest(deviceId)
+                    val originalDeviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
+                    
+                    // Deriviamo un deviceId iOS costante basato su quello Android per mantenere consistenza
+                    val iosDeviceId = UUID.nameUUIDFromBytes(originalDeviceId.toByteArray())
+                        .toString().replace("-", "").take(16)
+                    
+                    val transformedRequest = newIOSClientTokenRequest(iosDeviceId)
                     val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
                     
-                    // Usiamo header iOS perché il corpo è iOS
+                    XposedBridge.log("SPOOF-PROXY: Inviando richiesta iOS (DeviceID: $iosDeviceId)")
                     return requestClientTokenRaw(bodyBytes, useIosHeaders = true, originalHeaders)
                 }
             }
             
-            // Per Challenge o altro, inoltriamo byte originali con header originali (IMPORTANTE per evitare 400)
-            XposedBridge.log("SPOOF-PROXY: Inoltro byte originali (Challenge o altro). Preservo coerenza header/body.")
+            XposedBridge.log("SPOOF-PROXY: Inoltro byte originali (Challenge o altro). Preservo coerenza.")
             requestClientTokenRaw(bytes, useIosHeaders = false, originalHeaders)
         } catch (e: Exception) {
             XposedBridge.log("SPOOF-PROXY: Errore nel servire la richiesta: ${e.message}")
@@ -54,7 +58,6 @@ object IosClientTokenService {
     }
 
     private fun newIOSClientTokenRequest(deviceId: String): ClientTokenRequest {
-        XposedBridge.log("SPOOF-PROXY: Creazione nuovo token request iOS per device: $deviceId")
         val iosData = NativeIOSData(hwMachine = HARDWARE_MACHINE, systemVersion = SYSTEM_VERSION)
         val platformData = PlatformSpecificData(ios = iosData)
         val sdkData = ConnectivitySdkData(deviceId = deviceId, platformSpecificData = platformData)
@@ -75,7 +78,7 @@ object IosClientTokenService {
             connection.connectTimeout = 10000
             connection.readTimeout = 10000
 
-            // 1. Applichiamo header originali passati dall'app (importante per le Challenge)
+            // Copiamo header originali
             originalHeaders.forEach { (key, value) ->
                 if (!key.equals("host", ignoreCase = true) && 
                     !key.equals("content-length", ignoreCase = true) &&
@@ -84,7 +87,6 @@ object IosClientTokenService {
                 }
             }
 
-            // 2. Se stiamo inviando un corpo trasformato, forziamo header iOS
             if (useIosHeaders) {
                 connection.setRequestProperty("Content-Type", "application/x-protobuf")
                 connection.setRequestProperty("Accept", "application/x-protobuf")
@@ -98,7 +100,7 @@ object IosClientTokenService {
             val responseCode = connection.responseCode
             if (responseCode == 200) {
                 val responseBytes = connection.inputStream.readBytes()
-                XposedBridge.log("SPOOF-PROXY: Risposta ricevuta (${responseBytes.size} bytes)")
+                XposedBridge.log("SPOOF-PROXY: Risposta ricevuta (200 OK, ${responseBytes.size} bytes)")
                 responseBytes
             } else {
                 val errorBytes = connection.errorStream?.readBytes()

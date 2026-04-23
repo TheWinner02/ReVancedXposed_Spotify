@@ -19,8 +19,6 @@ fun SpotifyHook.SpoofClient() {
     val port = 4345
     val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
     val iosUserAgent = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
-    // Questo sembra essere l'hash SHA256, non il certificato reale. 
-    // Per ora lo lasciamo, ma potrebbe essere rilevato se Spotify controlla l'intero certificato.
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
     
     XposedBridge.log("SPOOF-CLIENT: Inizializzazione logica iOS Spoofing")
@@ -39,7 +37,7 @@ fun SpotifyHook.SpoofClient() {
         XposedBridge.log("SPOOF-CLIENT: Errore durante Build spoof: ${it.message}")
     }
 
-    // 2. Signature Spoof (Base)
+    // 2. Signature Spoof
     runCatching {
         val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
         XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
@@ -50,7 +48,6 @@ fun SpotifyHook.SpoofClient() {
                     @Suppress("DEPRECATION")
                     info.signatures = arrayOf(Signature(hexToBytes(spotifySha)))
                     param.result = info
-                    // Log rimosso per ridurre il rumore nei logcat
                 }
             }
         })
@@ -87,7 +84,7 @@ fun SpotifyHook.SpoofClient() {
         XposedBridge.log("SPOOF-CLIENT: ApplicationScopeConfiguration hooks error -> ${it.message}")
     }
 
-    // 5. Hook NativeHttpConnection (Redirezione e Header)
+    // 5. Hook NativeHttpConnection
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -114,8 +111,7 @@ fun SpotifyHook.SpoofClient() {
                         urlField.set(req, newUrl)
                     }
 
-                    // Patch Header: Applichiamo iOS headers a tutto tranne che alle richieste token.
-                    // Per le richieste token, lasciamo che il proxy locale decida in base alla coerenza del corpo.
+                    // Forziamo User-Agent e ClientID iOS su TUTTE le chiamate native tranne il token (gestito dal proxy)
                     if (!isTokenRequest) {
                         runCatching {
                             val headersField = req.javaClass.declaredFields.find { 
@@ -136,7 +132,6 @@ fun SpotifyHook.SpoofClient() {
                 }
             }
         )
-        XposedBridge.log("SPOOF-CLIENT: NativeHttpConnection hookato con successo")
     }.onFailure {
         XposedBridge.log("SPOOF-CLIENT: NativeHttpConnection hook error -> ${it.message}")
     }
