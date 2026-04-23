@@ -103,7 +103,7 @@ fun SpotifyHook.SpoofClient() {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    if (url == "https://clienttoken.spotify.com/v1/clienttoken") {
+                    if (url.startsWith("https://clienttoken.spotify.com/v1/clienttoken")) {
                         XposedBridge.log("SPOOF-CLIENT: Redirecting $url -> http://127.0.0.1:$port/v1/clienttoken")
                         urlField.set(req, "http://127.0.0.1:$port/v1/clienttoken")
                     } else if (url.contains("platform=android") || url.contains("device=android")) {

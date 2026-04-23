@@ -18,37 +18,39 @@ object IosClientTokenService {
 
     private const val IOS_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
 
-    // ORA RESTITUISCE ByteArray? INVECE DI ClientTokenResponse?
     fun serveClientTokenRequest(inputStream: InputStream): ByteArray? {
         return try {
             val bytes = inputStream.readBytes()
             XposedBridge.log("SPOOF-PROXY: Ricevuta richiesta Protobuf (${bytes.size} bytes)")
-            val request = ProtoBuf.decodeFromByteArray<ClientTokenRequest>(bytes)
-            XposedBridge.log("SPOOF-PROXY: Tipo richiesta originale: ${request.requestType}")
-
-            val responseBytes = getClientTokenResponse(request)
-            if (responseBytes != null) {
-                XposedBridge.log("SPOOF-PROXY: Risposta raw da Spotify ricevuta con successo (${responseBytes.size} bytes)")
+            
+            val request = try {
+                ProtoBuf.decodeFromByteArray<ClientTokenRequest>(bytes)
+            } catch (_: Exception) {
+                null
             }
-            responseBytes
+
+            if (request != null) {
+                XposedBridge.log("SPOOF-PROXY: Tipo richiesta originale: ${request.requestType}")
+                
+                if (request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST) {
+                    val currentClientId = request.clientData?.clientId
+                    if (currentClientId != IOS_CLIENT_ID) {
+                        XposedBridge.log("SPOOF-PROXY: Trasformazione richiesta CLIENT_DATA Android -> iOS")
+                        val deviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
+                        val transformedRequest = newIOSClientTokenRequest(deviceId)
+                        val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
+                        return requestClientTokenRaw(bodyBytes)
+                    }
+                }
+            }
+            
+            // IMPORTANTE: Per CHALLENGE_ANSWERS o altri tipi, inoltriamo i byte ORIGINALI.
+            // Il nostro modello ClientTokenRequest è incompleto (manca il campo 3 per le challenge),
+            // quindi re-encodarlo distruggerebbe i dati della challenge causano errore 400.
+            XposedBridge.log("SPOOF-PROXY: Inoltro byte originali per preservare campi (es. Challenge)")
+            requestClientTokenRaw(bytes)
         } catch (e: Exception) {
             XposedBridge.log("SPOOF-PROXY: Errore nel servire la richiesta clienttoken: ${e.message}")
-            null
-        }
-    }
-
-    private fun getClientTokenResponse(originalRequest: ClientTokenRequest): ByteArray? {
-        var request = originalRequest
-        if (request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST) {
-            XposedBridge.log("SPOOF-PROXY: Trasformazione richiesta Android -> iOS")
-            val deviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
-            request = newIOSClientTokenRequest(deviceId)
-        }
-
-        return try {
-            requestClientToken(request)
-        } catch (e: Exception) {
-            XposedBridge.log("SPOOF-PROXY: Errore durante l'inoltro a Spotify: ${e.message}")
             null
         }
     }
@@ -66,9 +68,7 @@ object IosClientTokenService {
         )
     }
 
-    private fun requestClientToken(clientTokenRequest: ClientTokenRequest): ByteArray? {
-        val bodyBytes = ProtoBuf.encodeToByteArray(clientTokenRequest)
-
+    private fun requestClientTokenRaw(bodyBytes: ByteArray): ByteArray? {
         return try {
             val url = URL("https://clienttoken.spotify.com/v1/clienttoken")
             val connection = url.openConnection() as HttpURLConnection
@@ -91,12 +91,13 @@ object IosClientTokenService {
                 XposedBridge.log("SPOOF-PROXY: Risposta da Spotify ricevuta (${responseBytes.size} bytes)")
                 responseBytes
             } else {
-                val errorMsg = connection.errorStream?.bufferedReader()?.readText() ?: connection.responseMessage
+                val errorBytes = connection.errorStream?.readBytes()
+                val errorMsg = errorBytes?.let { String(it) } ?: connection.responseMessage
                 XposedBridge.log("SPOOF-PROXY: Errore risposta Spotify ($responseCode): $errorMsg")
                 null
             }
         } catch (e: Exception) {
-            XposedBridge.log("SPOOF-PROXY: Errore durante richiesta clienttoken (HttpURLConnection): ${e.message}")
+            XposedBridge.log("SPOOF-PROXY: Errore durante richiesta clienttoken: ${e.message}")
             e.printStackTrace()
             null
         }
