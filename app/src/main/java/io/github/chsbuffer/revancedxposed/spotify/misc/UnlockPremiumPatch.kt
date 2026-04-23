@@ -74,6 +74,7 @@ fun SpotifyHook.UnlockPremium() {
             })
     }.onFailure { Logger.printDebug { "PlayerOptionOverrides hook fallito: ${it.message}" } }
 
+    /*
     // --- 5. PULIZIA CONTEXT MENU (RIMUOVI ADS) ---
     val contextMenuViewModelClazz = ::contextMenuViewModelClass.clazz
     XposedBridge.hookAllConstructors(contextMenuViewModelClazz, object : XC_MethodHook() {
@@ -94,6 +95,7 @@ fun SpotifyHook.UnlockPremium() {
             }
         }
     })
+    */
 
     // --- 6. RIMOZIONE SEZIONI ADS (HOME & BROWSE) ---
     // Per la Home
