@@ -5,8 +5,9 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
-import okhttp3.OkHttpClient
 import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URL
 
 @OptIn(ExperimentalSerializationApi::class)
 object IosClientTokenService {
@@ -16,8 +17,6 @@ object IosClientTokenService {
     private const val HARDWARE_MACHINE = "iPhone16,1"
 
     private const val IOS_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
-
-    private val okHttpClient = OkHttpClient()
 
     // ORA RESTITUISCE ByteArray? INVECE DI ClientTokenResponse?
     fun serveClientTokenRequest(inputStream: InputStream): ByteArray? {
@@ -56,7 +55,6 @@ object IosClientTokenService {
 
     private fun newIOSClientTokenRequest(deviceId: String): ClientTokenRequest {
         XposedBridge.log("SPOOF-PROXY: Creazione nuovo token request iOS per device: $deviceId")
-        // ... (IL TUO CODICE QUI RIMANE IDENTICO) ...
         val iosData = NativeIOSData(hwMachine = HARDWARE_MACHINE, systemVersion = SYSTEM_VERSION)
         val platformData = PlatformSpecificData(ios = iosData)
         val sdkData = ConnectivitySdkData(deviceId = deviceId, platformSpecificData = platformData)
@@ -72,57 +70,33 @@ object IosClientTokenService {
         val bodyBytes = ProtoBuf.encodeToByteArray(clientTokenRequest)
 
         return try {
-            val loader = OkHttpClient::class.java.classLoader
-            val builderClass = loader?.loadClass("okhttp3.Request\$Builder") ?: Class.forName("okhttp3.Request\$Builder")
-            val requestClass = loader?.loadClass("okhttp3.Request") ?: Class.forName("okhttp3.Request")
-            val requestBodyClass = loader?.loadClass("okhttp3.RequestBody") ?: Class.forName("okhttp3.RequestBody")
-            val mediaTypeClass = loader?.loadClass("okhttp3.MediaType") ?: Class.forName("okhttp3.MediaType")
-            val mediaTypeCompanionClass = loader?.loadClass("okhttp3.MediaType\$Companion") ?: Class.forName("okhttp3.MediaType\$Companion")
-            val callClass = loader?.loadClass("okhttp3.Call") ?: Class.forName("okhttp3.Call")
-            val responseClass = loader?.loadClass("okhttp3.Response") ?: Class.forName("okhttp3.Response")
-            val responseBodyClass = loader?.loadClass("okhttp3.ResponseBody") ?: Class.forName("okhttp3.ResponseBody")
+            val url = URL("https://clienttoken.spotify.com/v1/clienttoken")
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
 
-            val mediaTypeField = mediaTypeClass.getDeclaredField("e")
-            val mediaTypeCompanion = mediaTypeField.get(null)
-            val parseMethod = mediaTypeCompanionClass.getDeclaredMethod("b", String::class.java)
-            val mediaType = parseMethod.invoke(mediaTypeCompanion, "application/x-protobuf")
+            connection.setRequestProperty("Content-Type", "application/x-protobuf")
+            connection.setRequestProperty("Accept", "application/x-protobuf")
+            connection.setRequestProperty("User-Agent", IOS_USER_AGENT)
+            connection.setRequestProperty("X-Client-Id", IOS_CLIENT_ID)
+            connection.setRequestProperty("App-Platform", "ios")
 
-            val createBodyMethod = requestBodyClass.getDeclaredMethod("c", mediaTypeClass, ByteArray::class.java)
-            val body = createBodyMethod.invoke(null, mediaType, bodyBytes)
+            connection.outputStream.use { it.write(bodyBytes) }
 
-            val builder = builderClass.getDeclaredConstructor().newInstance()
-
-            val urlMethod = builderClass.getDeclaredMethod("g", String::class.java)
-            urlMethod.invoke(builder, "https://clienttoken.spotify.com/v1/clienttoken")
-
-            val methodMethod = builderClass.getDeclaredMethod("e", String::class.java, requestBodyClass)
-            methodMethod.invoke(builder, "POST", body)
-
-            val headerMethod = builderClass.getDeclaredMethod("a", String::class.java, String::class.java)
-            headerMethod.invoke(builder, "Content-Type", "application/x-protobuf")
-            headerMethod.invoke(builder, "Accept", "application/x-protobuf")
-            headerMethod.invoke(builder, "User-Agent", IOS_USER_AGENT)
-            headerMethod.invoke(builder, "X-Client-Id", IOS_CLIENT_ID)
-            headerMethod.invoke(builder, "App-Platform", "ios")
-
-            val requestConstructor = requestClass.getDeclaredConstructor(builderClass)
-            val request = requestConstructor.newInstance(builder)
-
-            val newCallMethod = OkHttpClient::class.java.getDeclaredMethod("a", requestClass)
-            val call = newCallMethod.invoke(okHttpClient, request)
-
-            val executeMethod = callClass.getDeclaredMethod("d")
-            val response = executeMethod.invoke(call)
-
-            val bodyField = responseClass.getDeclaredField("g")
-            val responseBody = bodyField.get(response)
-
-            val bytesMethod = responseBodyClass.getDeclaredMethod("d")
-            // RESTITUISCE I BYTE CRUDI INVECE DI DECODIFICARLI
-            bytesMethod.invoke(responseBody) as ByteArray
-
+            val responseCode = connection.responseCode
+            if (responseCode == 200) {
+                val responseBytes = connection.inputStream.readBytes()
+                XposedBridge.log("SPOOF-PROXY: Risposta da Spotify ricevuta (${responseBytes.size} bytes)")
+                responseBytes
+            } else {
+                val errorMsg = connection.errorStream?.bufferedReader()?.readText() ?: connection.responseMessage
+                XposedBridge.log("SPOOF-PROXY: Errore risposta Spotify ($responseCode): $errorMsg")
+                null
+            }
         } catch (e: Exception) {
-            XposedBridge.log("SPOOF-PROXY: Errore riflessione fisica OkHttp: ${e.message}")
+            XposedBridge.log("SPOOF-PROXY: Errore durante richiesta clienttoken (HttpURLConnection): ${e.message}")
             e.printStackTrace()
             null
         }

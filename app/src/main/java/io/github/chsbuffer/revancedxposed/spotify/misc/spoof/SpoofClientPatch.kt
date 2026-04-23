@@ -142,8 +142,7 @@ fun SpotifyHook.SpoofClient() {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir
             DexKitBridge.create(apkPath).use { bridge ->
-                // Passiamo anche la porta qui
-                applyDexKitDeepHooks(bridge, classLoader, iosClientId, iosUserAgent, port)
+                applyDexKitDeepHooks(bridge, classLoader, iosClientId, iosUserAgent)
             }
         }.onFailure {
             XposedBridge.log("SPOOF-CLIENT [FATAL]: Errore durante l'inizializzazione DexKit: ${it.message}")
@@ -151,7 +150,7 @@ fun SpotifyHook.SpoofClient() {
     }, 5, TimeUnit.SECONDS)
 }
 
-private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId: String, ua: String, port: Int) {
+private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId: String, ua: String) {
     XposedBridge.log("SPOOF-CLIENT [DEX]: Inizio Scansione fingerprints")
 
     // 1. Forza il ritorno dei getter "android" -> "ios"
@@ -171,50 +170,11 @@ private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId
         }
     }
 
-    // 2. Forza gli header nelle mappe di login
+    // 2. Forza gli header nelle mappe di login e protobuf dinamici
     runCatching {
         val methods = bridge.findMethod {
             matcher {
                 parameters("Ljava/util/Map;")
-                usingStrings("App-Platform")
-            }
-        }
-        methods.forEach { mData ->
-            XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
-                override fun afterHookedMethod(p: MethodHookParam) {
-                    val map = p.args[0] as? MutableMap<String, String> ?: return
-                    map["App-Platform"] = "ios"
-                    map["User-Agent"] = ua
-                    map["X-Client-Id"] = clientId
-                }
-            })
-        }
-    }
-
-    runCatching {
-        // Cerca i metodi che restituiscono "android" e falli restituire "ios"
-        val methods1 = bridge.findMethod {
-            matcher {
-                returnType = "java.lang.String"
-                usingStrings("android")
-            }
-        }
-        methods1.forEach { mData ->
-            XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    param.result = "ios"
-                }
-            })
-        }
-    }
-
-    // Hook per Mappe e Protobuf Dinamici
-    runCatching {
-        val methods = bridge.findMethod {
-            matcher {
-                parameters("Ljava/util/Map;")
-                returnType = "V"
-                modifiers = java.lang.reflect.Modifier.PUBLIC
                 usingStrings("App-Platform")
             }
         }
@@ -224,23 +184,21 @@ private fun applyDexKitDeepHooks(bridge: DexKitBridge, cl: ClassLoader, clientId
         methods.forEach { mData ->
             runCatching {
                 XposedBridge.hookMethod(mData.getMethodInstance(cl), object : XC_MethodHook() {
-                    override fun beforeHookedMethod(p: MethodHookParam) {
-                        val originalUrl = p.args[0] as String
-                        if (originalUrl.contains("127.0.0.1")) return // Non intercettare se è già il proxy
-
-                        if (originalUrl.contains("spotify.com/2") || originalUrl.contains("spotify.com/3") || originalUrl.contains("clienttoken")) {
-                            p.args[0] = "http://127.0.0.1:$port/v1/clienttoken"
-                            XposedBridge.log("SPOOF-CLIENT: REDIRECT ESEGUITO -> ${p.args[0]}")
+                    override fun afterHookedMethod(p: MethodHookParam) {
+                        val map = p.args[0] as? MutableMap<String, String> ?: return
+                        if (map.containsKey("App-Platform")) {
+                            map["App-Platform"] = "ios"
+                            map["User-Agent"] = ua
+                            map["X-Client-Id"] = clientId
+                            // XposedBridge.log("SPOOF-CLIENT [DEX]: Patchata mappa login")
                         }
                     }
                 })
             }
         }
-    }.onFailure {
-        XposedBridge.log("SPOOF-CLIENT [DEX]: Errore durante scansione loginMap: ${it.message}")
     }
 
-    // Hook per ClientID e UA via DexKit (Scansione manuale per gestire duplicati)
+    // 3. Hook per ClientID e UA via DexKit (Scansione manuale per gestire duplicati)
     listOf(
         "setClientId" to clientId,
         "setDefaultHTTPUserAgent" to ua
