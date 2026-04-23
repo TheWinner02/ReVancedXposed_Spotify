@@ -43,11 +43,10 @@ class RequestListener(port: Int) : NanoHTTPD(port) {
             override fun available(): Int = minOf(super.available().toLong(), remaining).toInt()
         }
 
-        // Ora responseBytes è un ByteArray puro proveniente da Spotify
-        val responseBytes = IosClientTokenService.serveClientTokenRequest(limitedInputStream)
+        // Passiamo anche gli header per poterli preservare se necessario
+        val responseBytes = IosClientTokenService.serveClientTokenRequest(limitedInputStream, session.headers)
 
         return if (responseBytes != null) {
-            // Inviamo i byte grezzi senza re-encodare in Protobuf
             newFixedLengthResponse(
                 Response.Status.OK,
                 "application/x-protobuf",
