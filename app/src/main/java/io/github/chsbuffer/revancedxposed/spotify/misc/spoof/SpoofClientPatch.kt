@@ -1,47 +1,15 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.spoof
 
-import android.content.pm.PackageInfo
-import android.content.pm.Signature
-import android.os.Build
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 
-private var listener: RequestListener? = null
-
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
-    val port = 4345
-    val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
     val classLoader = lpparam.classLoader
     
-    XposedBridge.log("SPOOF-CLIENT: Inizializzazione Spoof Chirurgico (Login-Only)")
+    XposedBridge.log("SPOOF-DEBUG: Modalità Analisi Traffico Attiva (Zero Spoofing)")
 
-    // 1. Signature Spoof (Indispensabile per il login e caricamento lib)
-    runCatching {
-        val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
-        XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                val pkg = param.args[0] as? String ?: return
-                if (pkg.contains("spotify")) {
-                    val info = param.result as? PackageInfo ?: return
-                    @Suppress("DEPRECATION")
-                    info.signatures = arrayOf(Signature(hexToBytes(spotifySha)))
-                    param.result = info
-                }
-            }
-        })
-    }
-
-    // 2. Proxy Listener (L'unico punto dove vive l'identità iOS)
-    if (listener == null) {
-        runCatching {
-            listener = RequestListener(port)
-            XposedBridge.log("SPOOF-CLIENT: RequestListener attivo su $port")
-        }
-    }
-
-    // 3. Hook NativeHttpConnection (Intercettazione Chirurgica)
+    // Hook NativeHttpConnection per vedere COSA fa l'app originale
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -56,27 +24,23 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    // Prevenzione Loop
-                    if (url.contains("127.0.0.1")) return
-
-                    // REDIRECT CHIRURGICO PER TOKEN
-                    // Solo questa chiamata viene deviata al proxy per ottenere il token iOS.
-                    // Tutto il resto dell'app rimane Android Puro per gestire Challenge e UI.
-                    if (url.contains("clienttoken.spotify.com/v1/clienttoken")) {
-                        val proxyUrl = "http://127.0.0.1:$port/v1/clienttoken"
-                        urlField.set(req, proxyUrl)
-                        XposedBridge.log("SPOOF-CLIENT: Redirect Token -> $url")
-                        return
+                    // Logghiamo TUTTE le chiamate sospette per capire il flusso originale
+                    if (url.contains("clienttoken") || url.contains("login") || url.contains("auth")) {
+                        XposedBridge.log("SPOOF-DEBUG: Request -> $url")
+                        
+                        // Tentiamo di vedere la dimensione del corpo per identificare il Protobuf
+                        runCatching {
+                            val bodyField = req.javaClass.declaredFields.find { it.type == ByteArray::class.java }
+                            bodyField?.let {
+                                it.isAccessible = true
+                                val body = it.get(req) as? ByteArray
+                                XposedBridge.log("SPOOF-DEBUG: Body Size -> ${body?.size ?: 0} bytes")
+                            }
+                        }
                     }
-                    
-                    // Nessun altro intervento. L'app gira come Android originale.
                 }
             }
         )
+        XposedBridge.log("SPOOF-DEBUG: Monitor di rete installato con successo")
     }
-    
-    // DexKit rimosso: lasciamo che l'app veda l'hardware reale (Android) 
-    // per non mandare in tilt i componenti della UI durante i Challenge.
 }
-
-private fun hexToBytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
