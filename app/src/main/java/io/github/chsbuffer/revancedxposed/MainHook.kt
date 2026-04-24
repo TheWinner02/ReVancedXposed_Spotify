@@ -48,7 +48,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         // 2. SPOOF CORE IMMEDIATO (Nessun delay per DexKit)
         if (lpparam.packageName == "com.spotify.music") {
             XposedBridge.log("MainHook: Avvio Spoofing Core IMMEDIATO")
-            //SpoofClient(lpparam)
+            SpoofClient(lpparam)
         }
 
         if (!lpparam.isFirstApplication) return
