@@ -25,30 +25,27 @@ object IosClientTokenService {
     // IP diretto di Spotify ClientToken per bypassare blocchi DNS
     private const val FALLBACK_IP = "35.186.224.24"
 
+    private fun ByteArray.toHexString() = joinToString("") { "%02x".format(it) }
+
     fun serveClientTokenRequest(inputStream: InputStream, originalHeaders: Map<String, String>): ByteArray? {
         return try {
             val bytes = inputStream.readBytes()
-            XposedBridge.log("SPOOF-DEBUG: [1/4] Ricevuta richiesta Android originale (${bytes.size} bytes)")
+            XposedBridge.log("SPOOF-DEBUG: [1/4] Android Request (Hex): ${bytes.toHexString()}")
             
             // FORZA IDENTITÀ IOS STATICA (MASTER)
-            XposedBridge.log("SPOOF-DEBUG: [2/4] Generazione Payload iOS Master (Static ID)")
-            
             val transformedRequest = newIOSClientTokenRequest(STATIC_IOS_DEVICE_ID)
             val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
+            XposedBridge.log("SPOOF-DEBUG: [2/4] iOS Master Request (Hex): ${bodyBytes.toHexString()}")
             
-            XposedBridge.log("SPOOF-DEBUG: [3/4] Invio richiesta a Spotify (Identity: iPhone16,1, DeviceID: $STATIC_IOS_DEVICE_ID)")
+            XposedBridge.log("SPOOF-DEBUG: [3/4] Sending iOS Request to Spotify...")
             val response = requestClientTokenRaw(bodyBytes, useIosHeaders = true, originalHeaders)
             
             if (response != null) {
-                XposedBridge.log("SPOOF-DEBUG: [4/4] Token iOS ricevuto e consegnato all'app (${response.size} bytes)")
-            } else {
-                XposedBridge.log("SPOOF-DEBUG: [FATAL] Risposta server NULL. Provo fallback Android...")
-                return requestClientTokenRaw(bytes, useIosHeaders = false, originalHeaders)
+                XposedBridge.log("SPOOF-DEBUG: [4/4] Response received (${response.size} bytes)")
             }
-            
             return response
         } catch (e: Exception) {
-            XposedBridge.log("SPOOF-DEBUG: Errore critico nel Proxy: ${e.message}")
+            XposedBridge.log("SPOOF-DEBUG: Proxy Exception: ${e.message}")
             null
         }
     }
@@ -98,7 +95,6 @@ object IosClientTokenService {
                 connection.useCaches = false
 
                 // PULIZIA TOTALE HEADER ORIGINALI
-                // Non inoltriamo gli header Android per evitare conflitti d'identità
                 if (!useIosHeaders) {
                     originalHeaders.forEach { (key, value) ->
                         if (!key.equals("host", ignoreCase = true) && 
@@ -108,13 +104,18 @@ object IosClientTokenService {
                         }
                     }
                 } else {
-                    // HEADER iOS PURI E RIGIDI
-                    connection.setRequestProperty("Content-Type", "application/x-protobuf")
-                    connection.setRequestProperty("Accept", "application/x-protobuf")
-                    connection.setRequestProperty("User-Agent", IOS_USER_AGENT)
-                    connection.setRequestProperty("X-Client-Id", IOS_CLIENT_ID)
-                    connection.setRequestProperty("App-Platform", "ios")
-                    connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                    val headers = mapOf(
+                        "Content-Type" to "application/x-protobuf",
+                        "Accept" to "application/x-protobuf",
+                        "User-Agent" to IOS_USER_AGENT,
+                        "X-Client-Id" to IOS_CLIENT_ID,
+                        "App-Platform" to "ios",
+                        "Accept-Language" to "en-US,en;q=0.9"
+                    )
+                    headers.forEach { (k, v) -> 
+                        connection.setRequestProperty(k, v)
+                        XposedBridge.log("SPOOF-DEBUG: Header -> $k: $v")
+                    }
                 }
 
                 connection.outputStream.use { it.write(bodyBytes) }
