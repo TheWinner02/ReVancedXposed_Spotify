@@ -8,6 +8,7 @@ import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import org.luckypray.dexkit.DexKitBridge
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -110,6 +111,14 @@ fun SpotifyHook.SpoofClient() {
                                     m["User-Agent"] = iosUserAgent
                                     m["App-Platform"] = "ios"
                                     m["X-Client-Id"] = iosClientId
+                                    
+                                    // Sincronizzazione Device ID per evitare Token Loop
+                                    m["X-Spotify-Device-Id"]?.let { originalId ->
+                                        if (originalId.length > 10 && !originalId.contains("-")) {
+                                            m["X-Spotify-Device-Id"] = UUID.nameUUIDFromBytes(originalId.toByteArray())
+                                                .toString().uppercase()
+                                        }
+                                    }
                                 }
                             }
                         }

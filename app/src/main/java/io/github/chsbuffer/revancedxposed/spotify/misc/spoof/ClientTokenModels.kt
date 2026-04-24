@@ -56,8 +56,8 @@ data class ClientDataRequest(
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ClientTokenRequest(
-    @ProtoNumber(1) val requestType: ClientTokenRequestType = ClientTokenRequestType.REQUEST_UNKNOWN,
-    @ProtoNumber(2) val clientData: ClientDataRequest? = null
+    @ProtoNumber(1) val clientData: ClientDataRequest? = null,
+    @ProtoNumber(2) val requestType: ClientTokenRequestType = ClientTokenRequestType.REQUEST_UNKNOWN
 )
 
 @OptIn(ExperimentalSerializationApi::class)
@@ -78,6 +78,6 @@ data class GrantedTokenResponse(
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class ClientTokenResponse(
-    @ProtoNumber(1) val responseType: ClientTokenResponseType = ClientTokenResponseType.RESPONSE_UNKNOWN,
-    @ProtoNumber(2) val grantedToken: GrantedTokenResponse? = null
+    @ProtoNumber(1) val grantedToken: GrantedTokenResponse? = null,
+    @ProtoNumber(3) val responseType: ClientTokenResponseType = ClientTokenResponseType.RESPONSE_UNKNOWN
 )

@@ -34,7 +34,7 @@ object IosClientTokenService {
                 null
             }
 
-                if (request != null && request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST) {
+                if (request != null && (request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST)) {
                     XposedBridge.log("SPOOF-PROXY: Trasformazione CLIENT_DATA -> Full iOS")
                     val originalDeviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
                     
@@ -64,8 +64,8 @@ object IosClientTokenService {
         val clientData = ClientDataRequest(clientId = IOS_CLIENT_ID, clientVersion = CLIENT_VERSION, connectivitySdkData = sdkData)
 
         return ClientTokenRequest(
-            requestType = ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST,
-            clientData = clientData
+            clientData = clientData,
+            requestType = ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST
         )
     }
 
@@ -116,11 +116,14 @@ object IosClientTokenService {
                 if (connection.responseCode == 200) {
                     val responseBytes = connection.inputStream.readBytes()
                     
-                    // UTILIZZO ClientTokenResponse per validazione e log
+                    // VALIDAZIONE E LOG DETTAGLIATO
                     runCatching {
                         val resp = ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBytes)
                         val expires = resp.grantedToken?.expiresAfterSeconds ?: 0
-                        XposedBridge.log("SPOOF-PROXY: Token iOS ottenuto con successo! (Scade tra: ${expires}s)")
+                        val tokenPreview = resp.grantedToken?.token?.take(10) ?: "null"
+                        XposedBridge.log("SPOOF-PROXY: Token iOS ottenuto! (Exp: ${expires}s, Preview: $tokenPreview...)")
+                    }.onFailure {
+                        XposedBridge.log("SPOOF-PROXY: Errore decodifica risposta: ${it.message}")
                     }
 
                     XposedBridge.log("SPOOF-PROXY: Successo! Ricevuti ${responseBytes.size} byte.")
