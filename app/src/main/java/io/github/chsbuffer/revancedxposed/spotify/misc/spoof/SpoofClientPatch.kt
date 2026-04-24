@@ -7,30 +7,17 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import org.luckypray.dexkit.DexKitBridge
 
 private var listener: RequestListener? = null
 
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val port = 4345
-    val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
-    val iosUserAgent = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
-    val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
-    
     val classLoader = lpparam.classLoader
-    XposedBridge.log("SPOOF-CLIENT: Inizializzazione Raffinata iOS Spoofing")
+    
+    XposedBridge.log("SPOOF-CLIENT: Inizializzazione Spoof Chirurgico (Login-Only)")
 
-    // 1. Hook di Sistema (Semplificato per evitare blocchi Samsung/PlayProtect)
-    runCatching {
-        System.setProperty("http.agent", iosUserAgent)
-        // Modifichiamo solo i parametri minimi necessari per l'identità core
-        XposedHelpers.setStaticObjectField(Build::class.java, "MANUFACTURER", "Apple")
-        XposedHelpers.setStaticObjectField(Build::class.java, "BRAND", "apple")
-        XposedHelpers.setStaticObjectField(Build.VERSION::class.java, "RELEASE", "17.7.2")
-    }
-
-    // 2. Signature Spoof (Rimane invariato, necessario per login)
+    // 1. Signature Spoof (Indispensabile per il login e caricamento lib)
     runCatching {
         val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
         XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
@@ -46,7 +33,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         })
     }
 
-    // 3. Proxy Listener
+    // 2. Proxy Listener (L'unico punto dove vive l'identità iOS)
     if (listener == null) {
         runCatching {
             listener = RequestListener(port)
@@ -54,7 +41,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         }
     }
 
-    // 4. Hook NativeHttpConnection (Surgical Mode)
+    // 3. Hook NativeHttpConnection (Intercettazione Chirurgica)
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -69,133 +56,27 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    // 1. Prevenzione Loop e Chiamate Esterne al Proxy
+                    // Prevenzione Loop
                     if (url.contains("127.0.0.1")) return
 
-                    // 2. Blocco Chirurgico Pubblicità e Tracking
-                    // Proteggiamo domini Google e Samsung necessari per la stabilità del sistema
-                    val isAdOrTracking = (url.contains("/ads/", true) || 
-                                       url.contains("/ad-logic/", true) ||
-                                       url.contains("analytics.spotify.com", true) ||
-                                       url.contains("tracking.spotify.com", true) ||
-                                       url.contains("log.spotify.com", true) ||
-                                       url.contains("crashdump.spotify.com", true)) &&
-                                       !url.contains("google", true) &&
-                                       !url.contains("samsung", true)
-
-                    if (isAdOrTracking) {
-                        XposedBridge.log("SPOOF-CLIENT [NHB]: Blocked -> $url")
-                        param.result = null
-                        return
-                    }
-
-                    // 3. REDIRECT CHIRURGICO PER TOKEN
-                    // Intercettiamo SOLO l'endpoint del token per evitare il "buco nero"
+                    // REDIRECT CHIRURGICO PER TOKEN
+                    // Solo questa chiamata viene deviata al proxy per ottenere il token iOS.
+                    // Tutto il resto dell'app rimane Android Puro per gestire Challenge e UI.
                     if (url.contains("clienttoken.spotify.com/v1/clienttoken")) {
                         val proxyUrl = "http://127.0.0.1:$port/v1/clienttoken"
                         urlField.set(req, proxyUrl)
-                        XposedBridge.log("SPOOF-CLIENT: Redirect Chirurgico Token -> $url")
+                        XposedBridge.log("SPOOF-CLIENT: Redirect Token -> $url")
                         return
                     }
-
-                    // 4. SPOOFING GLOBALE (Parametri URL e Header)
-                    // Forziamo l'identità iOS ovunque SENZA passare dal proxy
-                    if (url.contains("spotify.com") || url.contains("scdn.co") || url.contains("spclient")) {
-                        
-                        // Sostituzione parametri nella Query String
-                        if (url.contains("android")) {
-                            val newUrl = url.replace("platform=android", "platform=ios")
-                                            .replace("device=android", "device=ios")
-                                            .replace("os=android", "os=ios")
-                            if (newUrl != url) {
-                                urlField.set(req, newUrl)
-                            }
-                        }
-                        
-                        runCatching {
-                            val headersField = req.javaClass.declaredFields.find { 
-                                it.type == Map::class.java || it.type.name.contains("headers", ignoreCase = true) 
-                            }
-                            headersField?.let {
-                                it.isAccessible = true
-                                @Suppress("UNCHECKED_CAST")
-                                val map = it.get(req) as? MutableMap<String, String>
-                                map?.let { m ->
-                                    // LOGICA ELASTICA: Se stiamo gestendo un token/challenge, rimaniamo Android
-                                    // altrimenti le sfide di sicurezza non appaiono correttamente.
-                                    if (url.contains("clienttoken")) {
-                                        XposedBridge.log("SPOOF-CLIENT: Identità Android temporanea per Token/Challenge")
-                                        return@runCatching 
-                                    }
-
-                                    m["User-Agent"] = iosUserAgent
-                                    m["App-Platform"] = "ios"
-                                    m["X-Client-Id"] = iosClientId
-                                    
-                                    // Sincronizzazione Device ID con Identità iOS Statica
-                                    m["X-Spotify-Device-Id"] = iosStaticDeviceId
-                                }
-                            }
-                        }
-                    }
+                    
+                    // Nessun altro intervento. L'app gira come Android originale.
                 }
             }
         )
     }
-
-    // 5. Deep Spoof con DexKit - AVVIO IMMEDIATO
-    XposedBridge.log("SPOOF-CLIENT: Inizializzazione scansione DexKit...")
-    runCatching { System.loadLibrary("dexkit") }
     
-    Thread {
-        runCatching {
-            val apkPath = lpparam.appInfo.sourceDir
-            if (apkPath == null) {
-                XposedBridge.log("SPOOF-CLIENT [ERROR]: apkPath è NULL. DexKit non può partire.")
-                return@Thread
-            }
-            
-            XposedBridge.log("SPOOF-CLIENT: Caricamento bridge DexKit per $apkPath")
-            DexKitBridge.create(apkPath).use { bridge ->
-                XposedBridge.log("SPOOF-CLIENT: Bridge creato. Inizio ricerca stringhe...")
-                
-                // 1. Hook Stringhe Piattaforma ("android" -> "ios")
-                bridge.findMethod {
-                    matcher {
-                        returnType = "java.lang.String"
-                        usingStrings("android")
-                    }
-                }.forEach { mData ->
-                    runCatching {
-                        XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                            override fun beforeHookedMethod(p: MethodHookParam) { p.result = "ios" }
-                        })
-                    }
-                }
-
-                // 2. Hook Modello Hardware (Evasione Controlli JNI/Nativi)
-                bridge.findMethod {
-                    matcher {
-                        returnType = "java.lang.String"
-                        usingStrings("Pixel", "Samsung", "SM-", "Build/")
-                    }
-                }.forEach { mData ->
-                    runCatching {
-                        XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
-                            override fun beforeHookedMethod(p: MethodHookParam) { p.result = "iPhone16,1" }
-                        })
-                    }
-                }
-
-                XposedBridge.log("SPOOF-CLIENT: Deep Spoof DexKit completato con successo")
-            }
-        }.onFailure {
-            XposedBridge.log("SPOOF-CLIENT [FATAL]: Errore durante la scansione: ${it.message}")
-            it.printStackTrace()
-        }
-    }.apply { 
-        priority = Thread.MAX_PRIORITY
-    }.start()
+    // DexKit rimosso: lasciamo che l'app veda l'hardware reale (Android) 
+    // per non mandare in tilt i componenti della UI durante i Challenge.
 }
 
 private fun hexToBytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
