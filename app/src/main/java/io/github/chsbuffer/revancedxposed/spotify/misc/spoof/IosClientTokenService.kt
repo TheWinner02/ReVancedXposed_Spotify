@@ -120,18 +120,19 @@ object IosClientTokenService {
                 if (connection.responseCode == 200) {
                     val responseBytes = connection.inputStream.readBytes()
                     
-                    // VALIDAZIONE E GESTIONE CHALLENGE (Pro-Level)
+                    // VALIDAZIONE E GESTIONE CHALLENGE (Elastic Identity)
                     runCatching {
                         val resp = ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBytes)
                         if (resp.responseType == ClientTokenResponseType.RESPONSE_CHALLENGES_RESPONSE) {
-                            XposedBridge.log("SPOOF-PROXY: Ricevuto CHALLENGE! Pass-through trasparente attivo.")
-                            return responseBytes // Passiamo il challenge originale all'app per risoluzione
+                            XposedBridge.log("SPOOF-PROXY: Ricevuto CHALLENGE! Richiedo switch temporaneo ad Android.")
+                            // NON possiamo aggiungere header qui perché la funzione ritorna ByteArray
+                            // ma possiamo loggare e lasciare che l'app Android gestisca il corpo originale
                         }
                         
                         val expires = resp.grantedToken?.expiresAfterSeconds ?: 0
                         XposedBridge.log("SPOOF-PROXY: Token iOS ottenuto! (Scade tra: ${expires}s)")
                     }.onFailure {
-                        XposedBridge.log("SPOOF-PROXY: Errore decodifica (200), inoltro byte grezzi.")
+                        XposedBridge.log("SPOOF-PROXY: Risposta non decodificabile, inoltro byte grezzi.")
                     }
 
                     return responseBytes

@@ -99,7 +99,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     }
 
                     // 4. SPOOFING GLOBALE (Parametri URL e Header)
-                    // Se la richiesta va a Spotify, forziamo l'identità iOS ovunque SENZA passare dal proxy
+                    // Forziamo l'identità iOS ovunque SENZA passare dal proxy
                     if (url.contains("spotify.com") || url.contains("scdn.co") || url.contains("spclient")) {
                         
                         // Sostituzione parametri nella Query String
@@ -121,6 +121,13 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                                 @Suppress("UNCHECKED_CAST")
                                 val map = it.get(req) as? MutableMap<String, String>
                                 map?.let { m ->
+                                    // LOGICA ELASTICA: Se stiamo gestendo un token/challenge, rimaniamo Android
+                                    // altrimenti le sfide di sicurezza non appaiono correttamente.
+                                    if (url.contains("clienttoken")) {
+                                        XposedBridge.log("SPOOF-CLIENT: Identità Android temporanea per Token/Challenge")
+                                        return@runCatching 
+                                    }
+
                                     m["User-Agent"] = iosUserAgent
                                     m["App-Platform"] = "ios"
                                     m["X-Client-Id"] = iosClientId
