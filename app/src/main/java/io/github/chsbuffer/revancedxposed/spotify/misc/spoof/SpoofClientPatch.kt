@@ -19,6 +19,7 @@ fun SpotifyHook.SpoofClient() {
     val port = 4345
     val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
     val iosUserAgent = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
+    val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
     
     XposedBridge.log("SPOOF-CLIENT: Inizializzazione Raffinata iOS Spoofing")
@@ -74,13 +75,16 @@ fun SpotifyHook.SpoofClient() {
                     // 1. Prevenzione Loop e Chiamate Esterne al Proxy
                     if (url.contains("127.0.0.1")) return
 
-                    // 2. Blocco Pubblicità, Tracking e Crash (Unificato)
-                    val isAdOrTracking = url.contains("/ads/", true) || 
+                    // 2. Blocco Chirurgico Pubblicità e Tracking
+                    // Proteggiamo domini Google e Samsung necessari per la stabilità del sistema
+                    val isAdOrTracking = (url.contains("/ads/", true) || 
                                        url.contains("/ad-logic/", true) ||
                                        url.contains("analytics.spotify.com", true) ||
                                        url.contains("tracking.spotify.com", true) ||
                                        url.contains("log.spotify.com", true) ||
-                                       url.contains("crashdump.spotify.com", true)
+                                       url.contains("crashdump.spotify.com", true)) &&
+                                       !url.contains("google", true) &&
+                                       !url.contains("samsung", true)
 
                     if (isAdOrTracking) {
                         XposedBridge.log("SPOOF-CLIENT [NHB]: Blocked -> $url")
@@ -124,14 +128,8 @@ fun SpotifyHook.SpoofClient() {
                                     m["App-Platform"] = "ios"
                                     m["X-Client-Id"] = iosClientId
                                     
-                                    // Sincronizzazione Device ID per evitare Token Loop
-                                    m["X-Spotify-Device-Id"]?.let { originalId ->
-                                        if (originalId.length > 10 && !originalId.contains("-")) {
-                                            val iosId = UUID.nameUUIDFromBytes(originalId.toByteArray())
-                                                .toString().uppercase()
-                                            m["X-Spotify-Device-Id"] = iosId
-                                        }
-                                    }
+                                    // Sincronizzazione Device ID con Identità iOS Statica
+                                    m["X-Spotify-Device-Id"] = iosStaticDeviceId
                                 }
                             }
                         }

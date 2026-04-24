@@ -15,10 +15,12 @@ import javax.net.ssl.HostnameVerifier
 @OptIn(ExperimentalSerializationApi::class)
 object IosClientTokenService {
     private const val IOS_CLIENT_ID = "58bd3c95768941ea9eb4350aaa033eb3"
-    private const val CLIENT_VERSION = "iphone-9.0.58.558.g200011c"
+    private const val CLIENT_VERSION = "9.0.58.558" // Solo versione numerica, più sicura per il server
     private const val SYSTEM_VERSION = "17.7.2"
     private const val HARDWARE_MACHINE = "iPhone16,1"
     private const val IOS_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
+    
+    private const val STATIC_IOS_DEVICE_ID = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     
     // IP diretto di Spotify ClientToken per bypassare blocchi DNS
     private const val FALLBACK_IP = "35.186.224.24"
@@ -28,25 +30,13 @@ object IosClientTokenService {
             val bytes = inputStream.readBytes()
             XposedBridge.log("SPOOF-PROXY: Ricevuta richiesta (${bytes.size} bytes)")
             
-            // Tenta di estrarre il DeviceID originale per coerenza
-            var androidDeviceId: String? = null
-            try {
-                val request = ProtoBuf.decodeFromByteArray<ClientTokenRequest>(bytes)
-                androidDeviceId = request.clientData?.connectivitySdkData?.deviceId
-            } catch (_: Exception) {}
-
-            // FORZA SEMPRE LO SPOOFING iOS
-            // Non ci fidiamo della decodifica Android perché i tag potrebbero differire
-            XposedBridge.log("SPOOF-PROXY: Forzando trasformazione Full iOS")
+            // FORZA IDENTITÀ IOS STATICA (CERTIFICATA)
+            XposedBridge.log("SPOOF-PROXY: Trasformazione Full iOS (Static Identity)")
             
-            val deviceIdToUse = androidDeviceId ?: UUID.randomUUID().toString()
-            val iosDeviceId = UUID.nameUUIDFromBytes(deviceIdToUse.toByteArray())
-                .toString().uppercase()
-            
-            val transformedRequest = newIOSClientTokenRequest(iosDeviceId)
+            val transformedRequest = newIOSClientTokenRequest(STATIC_IOS_DEVICE_ID)
             val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
             
-            XposedBridge.log("SPOOF-PROXY: Inviando richiesta iOS (DeviceID: $iosDeviceId)")
+            XposedBridge.log("SPOOF-PROXY: Inviando richiesta iOS (DeviceID: $STATIC_IOS_DEVICE_ID)")
             val response = requestClientTokenRaw(bodyBytes, useIosHeaders = true, originalHeaders)
             
             if (response == null) {
