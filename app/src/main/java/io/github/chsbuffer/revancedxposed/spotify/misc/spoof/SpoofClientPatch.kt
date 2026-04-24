@@ -137,13 +137,20 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     }
 
     // 5. Deep Spoof con DexKit - AVVIO IMMEDIATO
-    // Rimuoviamo il delay di 5 secondi per vincere la race condition con il motore C++
-    XposedBridge.log("SPOOF-CLIENT: Avvio scansione DexKit IMMEDIATA in background")
+    XposedBridge.log("SPOOF-CLIENT: Inizializzazione scansione DexKit...")
     
     Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir
+            if (apkPath == null) {
+                XposedBridge.log("SPOOF-CLIENT [ERROR]: apkPath è NULL. DexKit non può partire.")
+                return@Thread
+            }
+            
+            XposedBridge.log("SPOOF-CLIENT: Caricamento bridge DexKit per $apkPath")
             DexKitBridge.create(apkPath).use { bridge ->
+                XposedBridge.log("SPOOF-CLIENT: Bridge creato. Inizio ricerca stringhe...")
+                
                 // 1. Hook Stringhe Piattaforma ("android" -> "ios")
                 bridge.findMethod {
                     matcher {
@@ -159,7 +166,6 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                 }
 
                 // 2. Hook Modello Hardware (Evasione Controlli JNI/Nativi)
-                // Molte classi leggono il modello via codice per reportistica interna
                 bridge.findMethod {
                     matcher {
                         returnType = "java.lang.String"
@@ -173,10 +179,11 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     }
                 }
 
-                XposedBridge.log("SPOOF-CLIENT: Deep Spoof DexKit (Advanced) completato")
+                XposedBridge.log("SPOOF-CLIENT: Deep Spoof DexKit completato con successo")
             }
         }.onFailure {
-            XposedBridge.log("SPOOF-CLIENT [ERROR]: Scansione DexKit fallita: ${it.message}")
+            XposedBridge.log("SPOOF-CLIENT [FATAL]: Errore durante la scansione: ${it.message}")
+            it.printStackTrace()
         }
     }.apply { 
         priority = Thread.MAX_PRIORITY
