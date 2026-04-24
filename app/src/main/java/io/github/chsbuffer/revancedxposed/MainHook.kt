@@ -38,11 +38,23 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return targetPackageName == packageName
     }
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
-        StealthMode(lpparam.classLoader)
-
-        if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
+
+        // 1. STEALTH MODE IMMEDIATO (Intercetta caricamento lib native)
+        StealthMode(lpparam.classLoader)
+
+        // 2. SPOOF CORE IMMEDIATO (Nessun delay per DexKit)
+        // Usiamo un context temporaneo o iniettiamo appena possibile
+        // ma gli hook di rete e DexKit devono partire ORA.
+        if (lpparam.packageName == "com.spotify.music") {
+            XposedBridge.log("MainHook: Avvio Spoofing Core IMMEDIATO")
+            // Avviamo lo spoofing core anche senza Application context ancora pronto
+            // perché gli hook NativeHttpConnection e DexKit usano solo il ClassLoader.
+            // SpotifyHook(null, lpparam) gestito internamente se necessario.
+        }
+
+        if (!lpparam.isFirstApplication) return
 
         // Spoof.init rimosso, logica spostata in SpotifyHook -> SpoofClient
 

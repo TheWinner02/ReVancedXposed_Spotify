@@ -13,7 +13,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 private var listener: RequestListener? = null
-private val executor = Executors.newSingleThreadScheduledExecutor()
 
 fun SpotifyHook.SpoofClient() {
     val port = 4345
@@ -139,8 +138,11 @@ fun SpotifyHook.SpoofClient() {
         )
     }
 
-    // 5. Deep Spoof DexKit (Ridotto per evitare crash/blocchi boot)
-    executor.schedule({
+    // 5. Deep Spoof con DexKit - AVVIO IMMEDIATO
+    // Rimuoviamo il delay di 5 secondi per vincere la race condition con il motore C++
+    XposedBridge.log("SPOOF-CLIENT: Avvio scansione DexKit IMMEDIATA in background")
+    
+    Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir
             DexKitBridge.create(apkPath).use { bridge ->
@@ -158,9 +160,14 @@ fun SpotifyHook.SpoofClient() {
                         })
                     }
                 }
+                XposedBridge.log("SPOOF-CLIENT: Deep Spoof DexKit completato con successo")
             }
+        }.onFailure {
+            XposedBridge.log("SPOOF-CLIENT [ERROR]: Scansione DexKit fallita: ${it.message}")
         }
-    }, 10, TimeUnit.SECONDS) // Delay aumentato per stabilità
+    }.apply { 
+        priority = Thread.MAX_PRIORITY // Massima priorità per finire prima che Spotify carichi tutto
+    }.start()
 }
 
 private fun hexToBytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
