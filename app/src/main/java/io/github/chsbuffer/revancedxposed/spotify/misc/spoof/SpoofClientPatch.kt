@@ -138,6 +138,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
 
     // 5. Deep Spoof con DexKit - AVVIO IMMEDIATO
     XposedBridge.log("SPOOF-CLIENT: Inizializzazione scansione DexKit...")
+    runCatching { System.loadLibrary("dexkit") }
     
     Thread {
         runCatching {
