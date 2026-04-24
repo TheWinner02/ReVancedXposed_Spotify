@@ -15,7 +15,7 @@ import javax.net.ssl.HostnameVerifier
 @OptIn(ExperimentalSerializationApi::class)
 object IosClientTokenService {
     private const val IOS_CLIENT_ID = "58bd3c95768941ea9eb4350aaa033eb3"
-    private const val CLIENT_VERSION = "9.0.58.558" // Solo versione numerica, più sicura per il server
+    private const val CLIENT_VERSION = "iphone-9.0.58.558.g200011c" 
     private const val SYSTEM_VERSION = "17.7.2"
     private const val HARDWARE_MACHINE = "iPhone16,1"
     private const val IOS_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
@@ -52,7 +52,13 @@ object IosClientTokenService {
     }
 
     private fun newIOSClientTokenRequest(deviceId: String): ClientTokenRequest {
-        val iosData = NativeIOSData(hwMachine = HARDWARE_MACHINE, systemVersion = SYSTEM_VERSION)
+        val iosData = NativeIOSData(
+            userInterfaceIdiom = 0, // 0 = Phone
+            targetIphoneSimulator = false,
+            hwMachine = HARDWARE_MACHINE, 
+            systemVersion = SYSTEM_VERSION,
+            simulatorModelIdentifier = ""
+        )
         val platformData = PlatformSpecificData(ios = iosData)
         val sdkData = ConnectivitySdkData(deviceId = deviceId, platformSpecificData = platformData)
         val clientData = ClientDataRequest(clientId = IOS_CLIENT_ID, clientVersion = CLIENT_VERSION, connectivitySdkData = sdkData)
@@ -103,6 +109,8 @@ object IosClientTokenService {
                     connection.setRequestProperty("User-Agent", IOS_USER_AGENT)
                     connection.setRequestProperty("X-Client-Id", IOS_CLIENT_ID)
                     connection.setRequestProperty("App-Platform", "ios")
+                    connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                    // Rimosso Accept-Encoding per evitare dati compressi non gestiti
                 }
 
                 connection.outputStream.use { it.write(bodyBytes) }
@@ -117,13 +125,14 @@ object IosClientTokenService {
                         val tokenPreview = resp.grantedToken?.token?.take(10) ?: "null"
                         XposedBridge.log("SPOOF-PROXY: Token iOS ottenuto! (Exp: ${expires}s, Preview: $tokenPreview...)")
                     }.onFailure {
-                        XposedBridge.log("SPOOF-PROXY: Errore decodifica risposta: ${it.message}")
+                        XposedBridge.log("SPOOF-PROXY: Errore decodifica risposta (200): ${it.message}")
                     }
 
                     XposedBridge.log("SPOOF-PROXY: Successo! Ricevuti ${responseBytes.size} byte.")
                     return responseBytes
                 } else {
-                    XposedBridge.log("SPOOF-PROXY: Server ha risposto con ${connection.responseCode}")
+                    val errorBody = connection.errorStream?.readBytes()?.decodeToString() ?: "Nessun corpo errore"
+                    XposedBridge.log("SPOOF-PROXY: Server ha risposto con ${connection.responseCode}. Dettagli: $errorBody")
                 }
             } catch (e: Exception) {
                 XposedBridge.log("SPOOF-PROXY: Fallimento su $address: ${e.message}")
