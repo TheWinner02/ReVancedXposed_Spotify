@@ -11,16 +11,16 @@ private var listener: RequestListener? = null
 
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val port = 4345
-    // Identità iOS Master (Allineata con sorgenti Pro)
+    // Identità iOS Master per il Bypass
     val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
     val iosUserAgent = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
     val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
     
     val classLoader = lpparam.classLoader
-    XposedBridge.log("SPOOF-CLIENT: Inizializzazione Total Identity Bridge (Login5 + Token)")
+    XposedBridge.log("SPOOF-CLIENT: Inizializzazione Bypass Login (Proxy + Header iOS)")
 
-    // 1. Signature Spoof (Indispensabile per il login)
+    // 1. Signature Spoof (Indispensabile per caricare lib native e login)
     runCatching {
         val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
         XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
@@ -36,7 +36,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         })
     }
 
-    // 2. Proxy Listener (iOS Token Factory)
+    // 2. Proxy Listener (Ottenimento Token iOS pulito)
     if (listener == null) {
         runCatching {
             listener = RequestListener(port)
@@ -44,7 +44,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         }
     }
 
-    // 3. Hook NativeHttpConnection (Il "Cervello" dello Spoofing)
+    // 3. Hook NativeHttpConnection (Intercettazione Dual-Gate)
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -62,7 +62,8 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     // Prevenzione Loop
                     if (url.contains("127.0.0.1")) return
 
-                    // TARGET 1: REDIRECT CHIRURGICO PER TOKEN
+                    // GATE 1: REDIRECT TOKEN AL PROXY
+                    // Otteniamo un token iOS per bypassare i blocchi Android
                     if (url.contains("clienttoken.spotify.com/v1/clienttoken")) {
                         val proxyUrl = "http://127.0.0.1:$port/v1/clienttoken"
                         urlField.set(req, proxyUrl)
@@ -70,19 +71,9 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                         return
                     }
 
-                    // TARGET 2: SPOOFING IDENTITÀ PER LOGIN E API VITALI
-                    // Colpiamo login5 (autenticazione) e spclient (dati premium)
-                    if (url.contains("login5.spotify.com") || url.contains("spclient.wg.spotify.com")) {
-                        
-                        // Sostituzione parametri URL (Android -> iOS)
-                        if (url.contains("android")) {
-                            val newUrl = url.replace("platform=android", "platform=ios")
-                                            .replace("device=android", "device=ios")
-                                            .replace("os=android", "os=ios")
-                            urlField.set(req, newUrl)
-                        }
-
-                        // Iniezione Header Master (Indispensabile per login5)
+                    // GATE 2: SPOOFING LOGIN5
+                    // Nascondiamo l'identità Android durante l'autenticazione dell'account
+                    if (url.contains("login5.spotify.com/v4/login")) {
                         runCatching {
                             val headersField = req.javaClass.declaredFields.find { 
                                 it.type == Map::class.java || it.type.name.contains("headers", ignoreCase = true) 
@@ -96,11 +87,14 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                                     m["App-Platform"] = "ios"
                                     m["X-Client-Id"] = iosClientId
                                     m["X-Spotify-Device-Id"] = iosStaticDeviceId
-                                    XposedBridge.log("SPOOF-CLIENT: Header iOS MASTER iniettati per $url")
+                                    XposedBridge.log("SPOOF-CLIENT: Identità iOS iniettata nel Login -> $url")
                                 }
                             }
                         }
+                        return
                     }
+                    
+                    // TUTTO IL RESTO rimane Android nativo per stabilità.
                 }
             }
         )
