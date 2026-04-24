@@ -20,7 +20,8 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
         ::UnlockPremium,
         ::LogOutPatch,
         ::FixThirdPartyLaunchersWidgets,
-        ::SpoofClient
+        ::SpoofClient,
+        //::NHB
     )
 
     // ══════════════════════════════════════════════════════
@@ -28,6 +29,46 @@ class SpotifyHook(app: Application, lpparam: LoadPackageParam) : BaseHook(app, l
     // ══════════════════════════════════════════════════════
     fun Extension() {
         injectHostClassLoaderToSelf(this::class.java.classLoader!!, classLoader)
+    }
+
+    // ══════════════════════════════════════════════════════
+    // NHB → NATIVE HTTP BLOCK
+    // ══════════════════════════════════════════════════════
+    fun NHB() {
+        runCatching {
+
+            val cl = classLoader
+
+            val httpConnectionImpl =
+                cl.loadClass("com.spotify.core.http.NativeHttpConnection")
+
+            val httpRequest =
+                cl.loadClass("com.spotify.core.http.HttpRequest")
+
+            val urlField = httpRequest.getDeclaredField("url")
+            urlField.isAccessible = true
+
+            XposedBridge.hookAllMethods(
+                httpConnectionImpl,
+                "send",
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val req = param.args[0]
+                        val url = urlField.get(req) as? String ?: return
+
+                        if (url.contains("ads", true) ||
+                            url.contains("tracking", true)
+                        ) {
+                            XposedBridge.log("NBH BLOCK: $url")
+                            param.result = null
+                        }
+                    }
+                }
+            )
+
+        }.onFailure {
+            XposedBridge.log("NHB error -> ${it.message}")
+        }
     }
 }
 

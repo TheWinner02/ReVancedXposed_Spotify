@@ -37,8 +37,12 @@ public final class UnlockPremiumPatch {
         }
 
     private static final List<OverrideAttribute> PREMIUM_OVERRIDES = List.of(
+            // Disable advertisements
+            new OverrideAttribute("ads", FALSE),
             // Works along on-demand, allows playing any song without restriction.
-            new OverrideAttribute("player-license", "open"),
+            new OverrideAttribute("player-license", "premium"),
+            // Secondary license flag
+            new OverrideAttribute("player-license-v2", "premium"),
             // Disables shuffle being initially enabled when first playing a playlist.
             new OverrideAttribute("shuffle", FALSE),
             // Allows playing any song on-demand, without a shuffled order.
@@ -53,6 +57,8 @@ public final class UnlockPremiumPatch {
             new OverrideAttribute("streaming-rules", ""),
             // Enables premium UI in settings and removes the premium button in the nav-bar.
             new OverrideAttribute("nft-disabled", "1"),
+            // Product type flag
+            new OverrideAttribute("type", "premium"),
             // Enable Spotify Car Thing hardware device.
             // Device is discontinued and no longer works with the latest releases,
             // but it might still work with older app targets.

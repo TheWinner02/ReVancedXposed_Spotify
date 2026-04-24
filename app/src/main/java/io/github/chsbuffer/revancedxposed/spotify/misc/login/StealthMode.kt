@@ -68,25 +68,29 @@ fun StealthMode(classLoader: ClassLoader) {
 
     // 5. MEMORY MAPS (/proc/self/maps) - PROTEZIONE AVANZATA
     runCatching {
-        // Molte app usano Runtime.exec("cat /proc/self/maps") o librerie che leggono il file
-        // Noi intercettiamo l'apertura del file tramite il costruttore di File o FileInputStream
-        // 5. MEMORY MAPS (/proc/self/maps) - PROTEZIONE AVANZATA
-        runCatching {
-            // Intercettiamo il costruttore di File quando l'app prova ad accedere ai maps
-            XposedHelpers.findAndHookConstructor(File::class.java, String::class.java, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val path = param.args[0] as? String ?: return
+        // Intercettiamo il costruttore di File quando l'app prova ad accedere ai maps
+        XposedHelpers.findAndHookConstructor(File::class.java, String::class.java, object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                val path = param.args[0] as? String ?: return
 
-                    // Se l'app cerca di leggere le mappe di memoria del proprio processo
-                    if (path.contains("/proc/self/maps") || path.contains("/proc/${android.os.Process.myPid()}/maps")) {
-                        // Reindirizziamo la lettura su un file di sistema innocuo.
-                        // /proc/self/stat o /proc/version contengono info generiche che non
-                        // rivelano la presenza di librerie iniettate (come liblspatch.so).
-                        param.args[0] = "/proc/version"
-                        XposedBridge.log("STEALTH: Tentativo di lettura maps deviato su /proc/version")
-                    }
+                // Se l'app cerca di leggere le mappe di memoria del proprio processo
+                if (path.contains("/proc/self/maps") || path.contains("/proc/${android.os.Process.myPid()}/maps")) {
+                    // Reindirizziamo la lettura su un file di sistema innocuo.
+                    param.args[0] = "/proc/version"
+                    XposedBridge.log("STEALTH: Tentativo di lettura maps deviato su /proc/version")
                 }
-            })
-        }
+            }
+        })
+    }
+
+    // 6. NATIVE ROOT CHECKER (Ravelin core)
+    runCatching {
+        val rootCheckerClass = XposedHelpers.findClass("com.ravelin.core.util.security.RootCheckerNative", classLoader)
+        XposedHelpers.findAndHookMethod(rootCheckerClass, "checkForRoot", Array<Any>::class.java, object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                param.result = false
+                XposedBridge.log("STEALTH: RootCheckerNative.checkForRoot bypassato")
+            }
+        })
     }
 }
