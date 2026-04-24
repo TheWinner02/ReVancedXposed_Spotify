@@ -28,25 +28,27 @@ object IosClientTokenService {
     fun serveClientTokenRequest(inputStream: InputStream, originalHeaders: Map<String, String>): ByteArray? {
         return try {
             val bytes = inputStream.readBytes()
-            XposedBridge.log("SPOOF-PROXY: Ricevuta richiesta (${bytes.size} bytes)")
+            XposedBridge.log("SPOOF-DEBUG: [1/4] Ricevuta richiesta Android originale (${bytes.size} bytes)")
             
-            // FORZA IDENTITÀ IOS STATICA (CERTIFICATA)
-            XposedBridge.log("SPOOF-PROXY: Trasformazione Full iOS (Static Identity)")
+            // FORZA IDENTITÀ IOS STATICA (MASTER)
+            XposedBridge.log("SPOOF-DEBUG: [2/4] Generazione Payload iOS Master (Static ID)")
             
             val transformedRequest = newIOSClientTokenRequest(STATIC_IOS_DEVICE_ID)
             val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
             
-            XposedBridge.log("SPOOF-PROXY: Inviando richiesta iOS (DeviceID: $STATIC_IOS_DEVICE_ID)")
+            XposedBridge.log("SPOOF-DEBUG: [3/4] Invio richiesta a Spotify (Identity: iPhone16,1, DeviceID: $STATIC_IOS_DEVICE_ID)")
             val response = requestClientTokenRaw(bodyBytes, useIosHeaders = true, originalHeaders)
             
-            if (response == null) {
-                XposedBridge.log("SPOOF-PROXY: Fallimento spoofing, provo inoltro originale...")
+            if (response != null) {
+                XposedBridge.log("SPOOF-DEBUG: [4/4] Token iOS ricevuto e consegnato all'app (${response.size} bytes)")
+            } else {
+                XposedBridge.log("SPOOF-DEBUG: [FATAL] Risposta server NULL. Provo fallback Android...")
                 return requestClientTokenRaw(bytes, useIosHeaders = false, originalHeaders)
             }
             
             return response
         } catch (e: Exception) {
-            XposedBridge.log("SPOOF-PROXY: Errore critico: ${e.message}")
+            XposedBridge.log("SPOOF-DEBUG: Errore critico nel Proxy: ${e.message}")
             null
         }
     }
@@ -120,25 +122,23 @@ object IosClientTokenService {
                 if (connection.responseCode == 200) {
                     val responseBytes = connection.inputStream.readBytes()
                     
-                    // VALIDAZIONE E GESTIONE CHALLENGE (Elastic Identity)
+                    // DEBUG DETTAGLIATO RITORNO
                     runCatching {
                         val resp = ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBytes)
                         if (resp.responseType == ClientTokenResponseType.RESPONSE_CHALLENGES_RESPONSE) {
-                            XposedBridge.log("SPOOF-PROXY: Ricevuto CHALLENGE! Richiedo switch temporaneo ad Android.")
-                            // NON possiamo aggiungere header qui perché la funzione ritorna ByteArray
-                            // ma possiamo loggare e lasciare che l'app Android gestisca il corpo originale
+                            XposedBridge.log("SPOOF-DEBUG: RITORNO -> CHALLENGE rilevato (Risoluzione Android necessaria)")
+                        } else if (resp.responseType == ClientTokenResponseType.RESPONSE_GRANTED_TOKEN_RESPONSE) {
+                            val expires = resp.grantedToken?.expiresAfterSeconds ?: 0
+                            XposedBridge.log("SPOOF-DEBUG: RITORNO -> TOKEN iOS ottenuto con successo! Scadenza: ${expires}s")
                         }
-                        
-                        val expires = resp.grantedToken?.expiresAfterSeconds ?: 0
-                        XposedBridge.log("SPOOF-PROXY: Token iOS ottenuto! (Scade tra: ${expires}s)")
                     }.onFailure {
-                        XposedBridge.log("SPOOF-PROXY: Risposta non decodificabile, inoltro byte grezzi.")
+                        XposedBridge.log("SPOOF-DEBUG: RITORNO -> Errore decodifica Protobuf, ma server ha risposto 200.")
                     }
 
                     return responseBytes
                 } else {
                     val errorBody = connection.errorStream?.readBytes()?.decodeToString() ?: "Nessun corpo errore"
-                    XposedBridge.log("SPOOF-PROXY: Server ha risposto con ${connection.responseCode}. Dettagli: $errorBody")
+                    XposedBridge.log("SPOOF-DEBUG: RITORNO -> ERRORE SERVER ${connection.responseCode}: $errorBody")
                 }
             } catch (e: Exception) {
                 XposedBridge.log("SPOOF-PROXY: Fallimento su $address: ${e.message}")
