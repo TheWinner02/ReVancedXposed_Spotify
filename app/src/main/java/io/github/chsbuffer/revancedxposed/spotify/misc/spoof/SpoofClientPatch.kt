@@ -12,9 +12,9 @@ private var listener: RequestListener? = null
 
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val port = 4345
-    // Identità iOS Master (Estratta dalle sorgenti ReVanced Pro)
+    // Identità iOS Master (Allineata con IosClientTokenService v8.8.84)
     val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
-    val iosUserAgent = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
+    val iosUserAgent = "Spotify/8.8.84 iOS/17.7.2 (iPhone16,1)"
     val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
     
@@ -96,7 +96,6 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
 
     // 4. Deep Spoof DexKit (Sostituzione Mirata del Platform Name)
     // Sostituiamo "android" con "ios" solo nei metodi che ritornano la piattaforma
-    runCatching { System.loadLibrary("dexkit") }
     Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir ?: return@Thread

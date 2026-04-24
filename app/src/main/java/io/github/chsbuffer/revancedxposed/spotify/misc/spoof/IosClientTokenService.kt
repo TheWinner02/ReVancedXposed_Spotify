@@ -14,11 +14,11 @@ import javax.net.ssl.HostnameVerifier
 
 @OptIn(ExperimentalSerializationApi::class)
 object IosClientTokenService {
-    private const val IOS_CLIENT_ID = "58bd3c95768941ea9eb4350aaa033eb3" // Ripristinato Client ID Pro
-    private const val CLIENT_VERSION = "iphone-9.0.58.558.g200011c" 
+    private const val IOS_CLIENT_ID = "58bd3c95768941ea9eb4350aaa033eb3" 
+    private const val CLIENT_VERSION = "iphone-8.8.84.502" // Versione più stabile e meno soggetta a Challenge forzati
     private const val SYSTEM_VERSION = "17.7.2"
     private const val HARDWARE_MACHINE = "iPhone16,1"
-    private const val IOS_USER_AGENT = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
+    private const val IOS_USER_AGENT = "Spotify/8.8.84 iOS/17.7.2 (iPhone16,1)"
     
     private const val STATIC_IOS_DEVICE_ID = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     
