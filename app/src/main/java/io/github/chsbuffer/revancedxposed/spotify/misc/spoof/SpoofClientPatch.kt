@@ -1,50 +1,21 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.spoof
 
-import android.content.pm.PackageInfo
-import android.content.pm.Signature
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 
-private var listener: RequestListener? = null
-
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
-    val port = 4345
-    // Identità iOS Master (Allineata con sorgenti ReVanced Pro)
+    val classLoader = lpparam.classLoader
+    
+    // Identità iOS Master (Allineata con sorgenti Pro)
     val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
     val iosUserAgent = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
-    val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
-    val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
-    
-    val classLoader = lpparam.classLoader
-    XposedBridge.log("SPOOF-CLIENT: Inizializzazione Strategia ReVanced Pro (Chirurgica)")
 
-    // 1. Signature Spoof
-    runCatching {
-        val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
-        XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                val pkg = param.args[0] as? String ?: return
-                if (pkg.contains("spotify")) {
-                    val info = param.result as? PackageInfo ?: return
-                    @Suppress("DEPRECATION")
-                    info.signatures = arrayOf(Signature(hexToBytes(spotifySha)))
-                    param.result = info
-                }
-            }
-        })
-    }
+    XposedBridge.log("SPOOF-CLIENT: Modalità Stealth Trasparente (Solo Header)")
 
-    // 2. Proxy Listener (SOLO per ClientToken come da sorgente ReVanced)
-    if (listener == null) {
-        runCatching {
-            listener = RequestListener(port)
-            XposedBridge.log("SPOOF-CLIENT: Proxy ClientToken attivo su $port")
-        }
-    }
+    // Rimosso Signature Spoof e Proxy per evitare l'errore "Si è verificato un problema"
+    // e garantire la stabilità totale della connessione.
 
-    // 3. Hook NativeHttpConnection
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -59,17 +30,11 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    if (url.contains("127.0.0.1")) return
-
-                    // GATE 1: REDIRECT TOKEN AL PROXY (Strategia ReVanced)
-                    if (url.contains("clienttoken.spotify.com/v1/clienttoken")) {
-                        urlField.set(req, "http://127.0.0.1:$port/v1/clienttoken")
-                        XposedBridge.log("SPOOF-CLIENT: Redirect Token -> $url")
-                        return
-                    }
-
-                    // GATE 2: SPOOFING IDENTITÀ (Senza Redirect per stabilità)
-                    if (url.contains("login5.spotify.com") || url.contains("spclient.wg.spotify.com")) {
+                    // Colpiamo i due punti critici per l'identità
+                    if (url.contains("login5.spotify.com/v4/login") || 
+                        url.contains("clienttoken.spotify.com/v1/clienttoken") ||
+                        url.contains("spclient.wg.spotify.com")) {
+                        
                         runCatching {
                             val headersField = req.javaClass.declaredFields.find { 
                                 it.type == Map::class.java || it.type.name.contains("headers", ignoreCase = true) 
@@ -82,8 +47,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                                     m["User-Agent"] = iosUserAgent
                                     m["App-Platform"] = "ios"
                                     m["X-Client-Id"] = iosClientId
-                                    m["X-Spotify-Device-Id"] = iosStaticDeviceId
-                                    XposedBridge.log("SPOOF-CLIENT: Header iOS MASTER iniettati per $url")
+                                    XposedBridge.log("SPOOF-CLIENT: Header Master iOS iniettati -> $url")
                                 }
                             }
                         }
@@ -93,5 +57,3 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         )
     }
 }
-
-private fun hexToBytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
