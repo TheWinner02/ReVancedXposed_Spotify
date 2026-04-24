@@ -105,6 +105,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     }
 
     // 3. Targeted Platform Spoof (DexKit)
+    runCatching { System.loadLibrary("dexkit") }
     Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
