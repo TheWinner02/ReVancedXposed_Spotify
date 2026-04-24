@@ -6,20 +6,22 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.encodeToByteArray
+import kotlinx.serialization.protobuf.ProtoBuf
 import org.luckypray.dexkit.DexKitBridge
 
-private var listener: RequestListener? = null
-
+@OptIn(ExperimentalSerializationApi::class)
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
-    val port = 4345
-    // Identità iOS Master (Allineata con IosClientTokenService v8.8.84)
+    val classLoader = lpparam.classLoader
+    
+    // Identità Master V8.8.84 (Sincronizzata con i modelli Protobuf)
     val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
     val iosUserAgent = "Spotify/8.8.84 iOS/17.7.2 (iPhone16,1)"
     val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
     
-    val classLoader = lpparam.classLoader
-    XposedBridge.log("SPOOF-CLIENT: Inizializzazione Strategia ReVanced Pro (Master Alignment)")
+    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità IN-MEMORY (Zero Proxy)")
 
     // 1. Signature Spoof (Indispensabile per caricamento lib native e login)
     runCatching {
@@ -37,20 +39,15 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         })
     }
 
-    // 2. Proxy Listener (SOLO per ClientToken - Come da sorgente ReVanced)
-    if (listener == null) {
-        runCatching {
-            listener = RequestListener(port)
-            XposedBridge.log("SPOOF-CLIENT: Proxy ClientToken attivo su $port")
-        }
-    }
-
-    // 3. Hook NativeHttpConnection (Intercettazione Chirurgica)
+    // 2. Hook NativeHttpConnection con TRASFORMAZIONE IN-MEMORY
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
         val httpRequest = cl.loadClass("com.spotify.core.http.HttpRequest")
         val urlField = httpRequest.getDeclaredField("url").apply { isAccessible = true }
+        
+        // Campo che contiene il corpo Protobuf (ByteArray)
+        val bodyField = httpRequest.declaredFields.find { it.type == ByteArray::class.java }?.apply { isAccessible = true }
 
         XposedBridge.hookAllMethods(
             httpConnectionImpl,
@@ -60,18 +57,31 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    // Prevenzione Loop
-                    if (url.contains("127.0.0.1")) return
-
-                    // REDIRECT CLIENT-TOKEN (Cuore del Bypass Premium)
+                    // --- TRASFORMAZIONE CHIRURGICA DEL TOKEN (Senza Redirect) ---
                     if (url.contains("clienttoken.spotify.com/v1/clienttoken")) {
-                        urlField.set(req, "http://127.0.0.1:$port/v1/clienttoken")
-                        XposedBridge.log("SPOOF-CLIENT: Redirect Token -> $url")
-                        return
+                        bodyField?.let { field ->
+                            val originalBody = field.get(req) as? ByteArray
+                            XposedBridge.log("SPOOF-DEBUG: Intercettata richiesta Token in RAM (${originalBody?.size ?: 0} bytes)")
+                            
+                            // Generazione Payload iOS Master al volo (Master Identity)
+                            val iosData = NativeIOSData(userInterfaceIdiom = 0, targetIphoneSimulator = false, hwMachine = "iPhone16,1", systemVersion = "17.7.2")
+                            val transformedRequest = ClientTokenRequest(
+                                requestType = ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST,
+                                clientData = ClientDataRequest(
+                                    clientVersion = "iphone-8.8.84.502",
+                                    clientId = iosClientId,
+                                    connectivitySdkData = ConnectivitySdkData(deviceId = iosStaticDeviceId, platformSpecificData = PlatformSpecificData(ios = iosData))
+                                )
+                            )
+                            
+                            val iosBody = ProtoBuf.encodeToByteArray(transformedRequest)
+                            field.set(req, iosBody)
+                            XposedBridge.log("SPOOF-DEBUG: Body trasformato in iOS Master -> ${iosBody.size} bytes")
+                        }
                     }
 
-                    // SPOOFING HEADER PER LOGIN E DATI PREMIUM (Invisibile e veloce)
-                    if (url.contains("login5.spotify.com") || url.contains("spclient.wg.spotify.com")) {
+                    // --- SPOOFING HEADER (Login5 e spclient) ---
+                    if (url.contains("spotify.com") || url.contains("scdn.co") || url.contains("spclient")) {
                         runCatching {
                             val headersField = req.javaClass.declaredFields.find { 
                                 it.type == Map::class.java || it.type.name.contains("headers", ignoreCase = true) 
@@ -94,9 +104,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         )
     }
 
-    // 4. Deep Spoof DexKit (Sostituzione Mirata del Platform Name)
-    // Sostituiamo "android" con "ios" solo nei metodi che ritornano la piattaforma
-    runCatching { System.loadLibrary("dexkit") }
+    // 3. Targeted Platform Spoof (DexKit)
     Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
@@ -109,7 +117,6 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                 }.forEach { mData ->
                     runCatching {
                         val method = mData.getMethodInstance(classLoader)
-                        // Evitiamo di rompere metodi di sistema, colpiamo solo quelli Spotify
                         if (method.declaringClass.name.contains("spotify")) {
                             XposedBridge.hookMethod(method, object : XC_MethodHook() {
                                 override fun beforeHookedMethod(p: MethodHookParam) { p.result = "ios" }
@@ -117,10 +124,10 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                         }
                     }
                 }
-                XposedBridge.log("SPOOF-CLIENT: Deep Platform Spoof completato")
+                XposedBridge.log("SPOOF-DEBUG: DexKit Platform Spoof attivo")
             }
         }.onFailure {
-            XposedBridge.log("SPOOF-CLIENT [ERROR]: DexKit Platform Spoof fallito: ${it.message}")
+            XposedBridge.log("SPOOF-DEBUG: DexKit fallito: ${it.message}")
         }
     }.apply { priority = Thread.MAX_PRIORITY }.start()
 }
