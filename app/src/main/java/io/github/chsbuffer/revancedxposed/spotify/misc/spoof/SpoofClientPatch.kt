@@ -96,6 +96,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
 
     // 4. Deep Spoof DexKit (Sostituzione Mirata del Platform Name)
     // Sostituiamo "android" con "ios" solo nei metodi che ritornano la piattaforma
+    runCatching { System.loadLibrary("dexkit") }
     Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
