@@ -11,16 +11,12 @@ private var listener: RequestListener? = null
 
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val port = 4345
-    // Identità iOS Master per il Bypass
-    val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
-    val iosUserAgent = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
-    val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
-    
     val classLoader = lpparam.classLoader
-    XposedBridge.log("SPOOF-CLIENT: Inizializzazione Bypass Login (Proxy + Header iOS)")
+    
+    XposedBridge.log("SPOOF-CLIENT: Inizializzazione Total Proxy (Token + Login)")
 
-    // 1. Signature Spoof (Indispensabile per caricare lib native e login)
+    // 1. Signature Spoof (Essenziale)
     runCatching {
         val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
         XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
@@ -36,7 +32,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         })
     }
 
-    // 2. Proxy Listener (Ottenimento Token iOS pulito)
+    // 2. Proxy Listener
     if (listener == null) {
         runCatching {
             listener = RequestListener(port)
@@ -44,7 +40,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         }
     }
 
-    // 3. Hook NativeHttpConnection (Intercettazione Dual-Gate)
+    // 3. Hook NativeHttpConnection
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -59,44 +55,23 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    // Prevenzione Loop
                     if (url.contains("127.0.0.1")) return
 
                     /*
                     // GATE 1: REDIRECT TOKEN AL PROXY
-                    // Otteniamo un token iOS per bypassare i blocchi Android
                     if (url.contains("clienttoken.spotify.com/v1/clienttoken")) {
-                        val proxyUrl = "http://127.0.0.1:$port/v1/clienttoken"
-                        urlField.set(req, proxyUrl)
+                        urlField.set(req, "http://127.0.0.1:$port/v1/clienttoken")
                         XposedBridge.log("SPOOF-CLIENT: Redirect Token -> $url")
                         return
                     }
                     */
 
-                    // GATE 2: SPOOFING LOGIN5
-                    // Nascondiamo l'identità Android durante l'autenticazione dell'account
+                    // GATE 2: REDIRECT LOGIN AL PROXY
                     if (url.contains("login5.spotify.com/v4/login")) {
-                        runCatching {
-                            val headersField = req.javaClass.declaredFields.find { 
-                                it.type == Map::class.java || it.type.name.contains("headers", ignoreCase = true) 
-                            }
-                            headersField?.let {
-                                it.isAccessible = true
-                                @Suppress("UNCHECKED_CAST")
-                                val map = it.get(req) as? MutableMap<String, String>
-                                map?.let { m ->
-                                    m["User-Agent"] = iosUserAgent
-                                    m["App-Platform"] = "ios"
-                                    m["X-Client-Id"] = iosClientId
-                                    m["X-Spotify-Device-Id"] = iosStaticDeviceId
-                                    XposedBridge.log("SPOOF-CLIENT: Identità iOS iniettata nel Login -> $url")
-                                }
-                            }
-                        }
+                        urlField.set(req, "http://127.0.0.1:$port/v4/login")
+                        XposedBridge.log("SPOOF-CLIENT: Redirect Login -> $url")
                         return
                     }
-                    
-                    // TUTTO IL RESTO rimane Android nativo per stabilità.
                 }
             }
         )
