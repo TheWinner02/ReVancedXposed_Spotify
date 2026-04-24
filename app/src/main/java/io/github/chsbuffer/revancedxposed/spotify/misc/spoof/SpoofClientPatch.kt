@@ -71,7 +71,10 @@ fun SpotifyHook.SpoofClient() {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    // 1. Blocco Pubblicità, Tracking e Crash (Unificato)
+                    // 1. Prevenzione Loop e Chiamate Esterne al Proxy
+                    if (url.contains("127.0.0.1")) return
+
+                    // 2. Blocco Pubblicità, Tracking e Crash (Unificato)
                     val isAdOrTracking = url.contains("/ads/", true) || 
                                        url.contains("/ad-logic/", true) ||
                                        url.contains("analytics.spotify.com", true) ||
@@ -85,18 +88,27 @@ fun SpotifyHook.SpoofClient() {
                         return
                     }
 
-                    // 2. Redirect Token (Il cuore del bypass)
-                    if (url.contains("clienttoken.spotify.com")) {
+                    // 3. REDIRECT CHIRURGICO PER TOKEN
+                    // Intercettiamo SOLO l'endpoint del token per evitare il "buco nero"
+                    if (url.contains("clienttoken.spotify.com/v1/clienttoken")) {
                         val proxyUrl = "http://127.0.0.1:$port/v1/clienttoken"
                         urlField.set(req, proxyUrl)
+                        XposedBridge.log("SPOOF-CLIENT: Redirect Chirurgico Token -> $url")
                         return
                     }
 
-                    // 2. Spoof selettivo solo per domini Spotify
-                    // Evitiamo di rompere chiamate a Google, Samsung o Analytics di sistema
-                    if (url.contains("spotify.com") || url.contains("scdn.co")) {
-                        if (url.contains("platform=android")) {
-                            urlField.set(req, url.replace("platform=android", "platform=ios"))
+                    // 4. SPOOFING GLOBALE (Parametri URL e Header)
+                    // Se la richiesta va a Spotify, forziamo l'identità iOS ovunque SENZA passare dal proxy
+                    if (url.contains("spotify.com") || url.contains("scdn.co") || url.contains("spclient")) {
+                        
+                        // Sostituzione parametri nella Query String
+                        if (url.contains("android")) {
+                            val newUrl = url.replace("platform=android", "platform=ios")
+                                            .replace("device=android", "device=ios")
+                                            .replace("os=android", "os=ios")
+                            if (newUrl != url) {
+                                urlField.set(req, newUrl)
+                            }
                         }
                         
                         runCatching {
@@ -115,8 +127,9 @@ fun SpotifyHook.SpoofClient() {
                                     // Sincronizzazione Device ID per evitare Token Loop
                                     m["X-Spotify-Device-Id"]?.let { originalId ->
                                         if (originalId.length > 10 && !originalId.contains("-")) {
-                                            m["X-Spotify-Device-Id"] = UUID.nameUUIDFromBytes(originalId.toByteArray())
+                                            val iosId = UUID.nameUUIDFromBytes(originalId.toByteArray())
                                                 .toString().uppercase()
+                                            m["X-Spotify-Device-Id"] = iosId
                                         }
                                     }
                                 }

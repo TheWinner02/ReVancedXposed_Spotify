@@ -26,33 +26,37 @@ object IosClientTokenService {
     fun serveClientTokenRequest(inputStream: InputStream, originalHeaders: Map<String, String>): ByteArray? {
         return try {
             val bytes = inputStream.readBytes()
-            XposedBridge.log("SPOOF-PROXY: Ricevuta richiesta Protobuf (${bytes.size} bytes)")
+            XposedBridge.log("SPOOF-PROXY: Ricevuta richiesta (${bytes.size} bytes)")
             
-            val request = try {
-                ProtoBuf.decodeFromByteArray<ClientTokenRequest>(bytes)
-            } catch (_: Exception) {
-                null
-            }
+            // Tenta di estrarre il DeviceID originale per coerenza
+            var androidDeviceId: String? = null
+            try {
+                val request = ProtoBuf.decodeFromByteArray<ClientTokenRequest>(bytes)
+                androidDeviceId = request.clientData?.connectivitySdkData?.deviceId
+            } catch (_: Exception) {}
 
-                if (request != null && (request.requestType == ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST)) {
-                    XposedBridge.log("SPOOF-PROXY: Trasformazione CLIENT_DATA -> Full iOS")
-                    val originalDeviceId = request.clientData?.connectivitySdkData?.deviceId ?: ""
-                    
-                    // Generiamo un vero UUID in formato iOS (costante per lo stesso deviceId Android)
-                    val iosDeviceId = UUID.nameUUIDFromBytes(originalDeviceId.toByteArray())
-                        .toString().uppercase()
-                    
-                    val transformedRequest = newIOSClientTokenRequest(iosDeviceId)
-                    val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
-                    
-                    XposedBridge.log("SPOOF-PROXY: Inviando richiesta iOS (DeviceID: $iosDeviceId)")
-                    return requestClientTokenRaw(bodyBytes, useIosHeaders = true, originalHeaders)
-                }
+            // FORZA SEMPRE LO SPOOFING iOS
+            // Non ci fidiamo della decodifica Android perché i tag potrebbero differire
+            XposedBridge.log("SPOOF-PROXY: Forzando trasformazione Full iOS")
             
-            XposedBridge.log("SPOOF-PROXY: Inoltro byte originali (Challenge o altro).")
-            requestClientTokenRaw(bytes, useIosHeaders = false, originalHeaders)
+            val deviceIdToUse = androidDeviceId ?: UUID.randomUUID().toString()
+            val iosDeviceId = UUID.nameUUIDFromBytes(deviceIdToUse.toByteArray())
+                .toString().uppercase()
+            
+            val transformedRequest = newIOSClientTokenRequest(iosDeviceId)
+            val bodyBytes = ProtoBuf.encodeToByteArray(transformedRequest)
+            
+            XposedBridge.log("SPOOF-PROXY: Inviando richiesta iOS (DeviceID: $iosDeviceId)")
+            val response = requestClientTokenRaw(bodyBytes, useIosHeaders = true, originalHeaders)
+            
+            if (response == null) {
+                XposedBridge.log("SPOOF-PROXY: Fallimento spoofing, provo inoltro originale...")
+                return requestClientTokenRaw(bytes, useIosHeaders = false, originalHeaders)
+            }
+            
+            return response
         } catch (e: Exception) {
-            XposedBridge.log("SPOOF-PROXY: Errore critico nel servire la richiesta: ${e.message}")
+            XposedBridge.log("SPOOF-PROXY: Errore critico: ${e.message}")
             null
         }
     }
