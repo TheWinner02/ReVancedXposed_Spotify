@@ -62,6 +62,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     // Prevenzione Loop
                     if (url.contains("127.0.0.1")) return
 
+                    /*
                     // GATE 1: REDIRECT TOKEN AL PROXY
                     // Otteniamo un token iOS per bypassare i blocchi Android
                     if (url.contains("clienttoken.spotify.com/v1/clienttoken")) {
@@ -70,6 +71,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                         XposedBridge.log("SPOOF-CLIENT: Redirect Token -> $url")
                         return
                     }
+                    */
 
                     // GATE 2: SPOOFING LOGIN5
                     // Nascondiamo l'identità Android durante l'autenticazione dell'account
