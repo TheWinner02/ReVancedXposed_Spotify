@@ -14,7 +14,7 @@ import javax.net.ssl.HostnameVerifier
 
 @OptIn(ExperimentalSerializationApi::class)
 object IosClientTokenService {
-    private const val IOS_CLIENT_ID = "58bd3c95768941ea9eb4350aaa033eb3"
+    private const val IOS_CLIENT_ID = "73c794013149488d8b9937a0bc076868" // Client ID iOS ufficiale e stabile
     private const val CLIENT_VERSION = "iphone-9.0.58.558.g200011c" 
     private const val SYSTEM_VERSION = "17.7.2"
     private const val HARDWARE_MACHINE = "iPhone16,1"
@@ -95,22 +95,24 @@ object IosClientTokenService {
                 connection.readTimeout = 8000
                 connection.useCaches = false
 
-                originalHeaders.forEach { (key, value) ->
-                    if (!key.equals("host", ignoreCase = true) && 
-                        !key.equals("content-length", ignoreCase = true) &&
-                        !key.equals("connection", ignoreCase = true)) {
-                        connection.setRequestProperty(key, value)
+                // PULIZIA TOTALE HEADER ORIGINALI
+                // Non inoltriamo gli header Android per evitare conflitti d'identità
+                if (!useIosHeaders) {
+                    originalHeaders.forEach { (key, value) ->
+                        if (!key.equals("host", ignoreCase = true) && 
+                            !key.equals("content-length", ignoreCase = true) &&
+                            !key.equals("connection", ignoreCase = true)) {
+                            connection.setRequestProperty(key, value)
+                        }
                     }
-                }
-
-                if (useIosHeaders) {
+                } else {
+                    // HEADER iOS PURI E RIGIDI
                     connection.setRequestProperty("Content-Type", "application/x-protobuf")
                     connection.setRequestProperty("Accept", "application/x-protobuf")
                     connection.setRequestProperty("User-Agent", IOS_USER_AGENT)
                     connection.setRequestProperty("X-Client-Id", IOS_CLIENT_ID)
                     connection.setRequestProperty("App-Platform", "ios")
                     connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
-                    // Rimosso Accept-Encoding per evitare dati compressi non gestiti
                 }
 
                 connection.outputStream.use { it.write(bodyBytes) }
