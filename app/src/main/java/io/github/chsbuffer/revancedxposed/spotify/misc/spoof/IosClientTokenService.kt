@@ -25,51 +25,6 @@ object IosClientTokenService {
     // IP diretto di Spotify ClientToken per bypassare blocchi DNS
     private const val FALLBACK_IP = "35.186.224.24"
 
-    fun relayLoginRequest(bodyBytes: ByteArray, originalHeaders: Map<String, String>): ByteArray? {
-        val loginHost = "login5.spotify.com"
-        XposedBridge.log("SPOOF-PROXY: Inizio Relay Login5...")
-        
-        return try {
-            val url = URL("https://$loginHost/v4/login")
-            val connection = url.openConnection() as HttpsURLConnection
-            
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.useCaches = false
-            
-            // Iniezione Header iOS Master per il Login
-            connection.setRequestProperty("Host", loginHost)
-            connection.setRequestProperty("User-Agent", IOS_USER_AGENT)
-            connection.setRequestProperty("X-Client-Id", IOS_CLIENT_ID)
-            connection.setRequestProperty("App-Platform", "ios")
-            connection.setRequestProperty("Content-Type", "application/x-protobuf")
-            connection.setRequestProperty("Accept", "application/x-protobuf")
-            connection.setRequestProperty("X-Spotify-Device-Id", STATIC_IOS_DEVICE_ID)
-            
-            // Preserviamo eventuali altri header non identificativi
-            originalHeaders.forEach { (key, value) ->
-                if (!listOf("host", "user-agent", "x-client-id", "app-platform", "content-length", "connection").contains(key.lowercase())) {
-                    connection.setRequestProperty(key, value)
-                }
-            }
-
-            connection.outputStream.use { it.write(bodyBytes) }
-
-            if (connection.responseCode == 200) {
-                val resp = connection.inputStream.readBytes()
-                XposedBridge.log("SPOOF-PROXY: Login5 Relay Successo (${resp.size} bytes)")
-                return resp
-            } else {
-                val error = connection.errorStream?.readBytes()?.decodeToString() ?: "No body"
-                XposedBridge.log("SPOOF-PROXY: Login5 Relay Fallito (${connection.responseCode}): $error")
-                null
-            }
-        } catch (e: Exception) {
-            XposedBridge.log("SPOOF-PROXY: Errore Relay Login5: ${e.message}")
-            null
-        }
-    }
-
     fun serveClientTokenRequest(inputStream: InputStream, originalHeaders: Map<String, String>): ByteArray? {
         return try {
             val bytes = inputStream.readBytes()

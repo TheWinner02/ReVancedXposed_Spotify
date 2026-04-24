@@ -16,30 +16,16 @@ class RequestListener(port: Int) : NanoHTTPD(port) {
     }
 
     override fun serve(session: IHTTPSession): Response {
-        // Accettiamo clienttoken o login
-        val uri = session.uri
-        if (!uri.contains("clienttoken") && !uri.contains("login")) {
+        // Accettiamo solo l'endpoint del token (Strategia ReVanced Pro)
+        if (!session.uri.contains("clienttoken")) {
             return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
         }
 
-        XposedBridge.log("SPOOF-PROXY: Gestione richiesta per $uri")
+        XposedBridge.log("SPOOF-PROXY: Gestione richiesta per ${session.uri}")
 
         val inputStream = session.inputStream
         val contentLength = session.headers["content-length"]?.toLong() ?: 0L
-        
-        // Logica semplificata per il login (Relay Trasparente con Header iOS)
-        if (uri.contains("login")) {
-            val bytes = inputStream.readBytes()
-            XposedBridge.log("SPOOF-PROXY: Relay Login (${bytes.size} bytes)")
-            val responseBytes = IosClientTokenService.relayLoginRequest(bytes, session.headers)
-            return if (responseBytes != null) {
-                newFixedLengthResponse(Response.Status.OK, "application/x-protobuf", ByteArrayInputStream(responseBytes), responseBytes.size.toLong())
-            } else {
-                newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Login Relay Failed")
-            }
-        }
 
-        // Logica esistente per ClientToken
         val limitedInputStream = object : java.io.FilterInputStream(inputStream) {
             private var remaining = contentLength
             override fun read(): Int {
@@ -57,7 +43,7 @@ class RequestListener(port: Int) : NanoHTTPD(port) {
             override fun available(): Int = minOf(super.available().toLong(), remaining).toInt()
         }
 
-        // Passiamo anche gli header per poterli preservare se necessario
+        // Passiamo la richiesta al servizio di spoofing iOS
         val responseBytes = IosClientTokenService.serveClientTokenRequest(limitedInputStream, session.headers)
 
         return if (responseBytes != null) {
