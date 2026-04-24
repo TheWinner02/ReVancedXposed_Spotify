@@ -16,7 +16,7 @@ private var listener: RequestListener? = null
 
 fun SpotifyHook.SpoofClient() {
     val port = 4345
-    val iosClientId = "73c794013149488d8b9937a0bc076868"
+    val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
     val iosUserAgent = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
     val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
@@ -146,27 +146,42 @@ fun SpotifyHook.SpoofClient() {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir
             DexKitBridge.create(apkPath).use { bridge ->
-                // Hookiamo solo i metodi che ritornano "android" -> "ios"
-                val methods = bridge.findMethod {
+                // 1. Hook Stringhe Piattaforma ("android" -> "ios")
+                bridge.findMethod {
                     matcher {
                         returnType = "java.lang.String"
                         usingStrings("android")
                     }
-                }
-                methods.forEach { mData ->
+                }.forEach { mData ->
                     runCatching {
                         XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
                             override fun beforeHookedMethod(p: MethodHookParam) { p.result = "ios" }
                         })
                     }
                 }
-                XposedBridge.log("SPOOF-CLIENT: Deep Spoof DexKit completato con successo")
+
+                // 2. Hook Modello Hardware (Evasione Controlli JNI/Nativi)
+                // Molte classi leggono il modello via codice per reportistica interna
+                bridge.findMethod {
+                    matcher {
+                        returnType = "java.lang.String"
+                        usingStrings("Pixel", "Samsung", "SM-", "Build/")
+                    }
+                }.forEach { mData ->
+                    runCatching {
+                        XposedBridge.hookMethod(mData.getMethodInstance(classLoader), object : XC_MethodHook() {
+                            override fun beforeHookedMethod(p: MethodHookParam) { p.result = "iPhone16,1" }
+                        })
+                    }
+                }
+
+                XposedBridge.log("SPOOF-CLIENT: Deep Spoof DexKit (Advanced) completato")
             }
         }.onFailure {
             XposedBridge.log("SPOOF-CLIENT [ERROR]: Scansione DexKit fallita: ${it.message}")
         }
     }.apply { 
-        priority = Thread.MAX_PRIORITY // Massima priorità per finire prima che Spotify carichi tutto
+        priority = Thread.MAX_PRIORITY
     }.start()
 }
 

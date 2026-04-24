@@ -14,7 +14,7 @@ import javax.net.ssl.HostnameVerifier
 
 @OptIn(ExperimentalSerializationApi::class)
 object IosClientTokenService {
-    private const val IOS_CLIENT_ID = "73c794013149488d8b9937a0bc076868" // Client ID iOS ufficiale e stabile
+    private const val IOS_CLIENT_ID = "58bd3c95768941ea9eb4350aaa033eb3" // Ripristinato Client ID Pro
     private const val CLIENT_VERSION = "iphone-9.0.58.558.g200011c" 
     private const val SYSTEM_VERSION = "17.7.2"
     private const val HARDWARE_MACHINE = "iPhone16,1"
@@ -64,8 +64,8 @@ object IosClientTokenService {
         val clientData = ClientDataRequest(clientId = IOS_CLIENT_ID, clientVersion = CLIENT_VERSION, connectivitySdkData = sdkData)
 
         return ClientTokenRequest(
-            clientData = clientData,
-            requestType = ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST
+            requestType = ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST,
+            clientData = clientData
         )
     }
 
@@ -120,17 +120,20 @@ object IosClientTokenService {
                 if (connection.responseCode == 200) {
                     val responseBytes = connection.inputStream.readBytes()
                     
-                    // VALIDAZIONE E LOG DETTAGLIATO
+                    // VALIDAZIONE E GESTIONE CHALLENGE (Pro-Level)
                     runCatching {
                         val resp = ProtoBuf.decodeFromByteArray<ClientTokenResponse>(responseBytes)
+                        if (resp.responseType == ClientTokenResponseType.RESPONSE_CHALLENGES_RESPONSE) {
+                            XposedBridge.log("SPOOF-PROXY: Ricevuto CHALLENGE! Pass-through trasparente attivo.")
+                            return responseBytes // Passiamo il challenge originale all'app per risoluzione
+                        }
+                        
                         val expires = resp.grantedToken?.expiresAfterSeconds ?: 0
-                        val tokenPreview = resp.grantedToken?.token?.take(10) ?: "null"
-                        XposedBridge.log("SPOOF-PROXY: Token iOS ottenuto! (Exp: ${expires}s, Preview: $tokenPreview...)")
+                        XposedBridge.log("SPOOF-PROXY: Token iOS ottenuto! (Scade tra: ${expires}s)")
                     }.onFailure {
-                        XposedBridge.log("SPOOF-PROXY: Errore decodifica risposta (200): ${it.message}")
+                        XposedBridge.log("SPOOF-PROXY: Errore decodifica (200), inoltro byte grezzi.")
                     }
 
-                    XposedBridge.log("SPOOF-PROXY: Successo! Ricevuti ${responseBytes.size} byte.")
                     return responseBytes
                 } else {
                     val errorBody = connection.errorStream?.readBytes()?.decodeToString() ?: "Nessun corpo errore"
