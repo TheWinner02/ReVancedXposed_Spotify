@@ -21,6 +21,7 @@ import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import io.github.chsbuffer.revancedxposed.spotify.misc.login.StealthMode
 import androidx.core.view.isNotEmpty
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofClient
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var startupParam: StartupParam
@@ -45,18 +46,12 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         StealthMode(lpparam.classLoader)
 
         // 2. SPOOF CORE IMMEDIATO (Nessun delay per DexKit)
-        // Usiamo un context temporaneo o iniettiamo appena possibile
-        // ma gli hook di rete e DexKit devono partire ORA.
         if (lpparam.packageName == "com.spotify.music") {
             XposedBridge.log("MainHook: Avvio Spoofing Core IMMEDIATO")
-            // Avviamo lo spoofing core anche senza Application context ancora pronto
-            // perché gli hook NativeHttpConnection e DexKit usano solo il ClassLoader.
-            // SpotifyHook(null, lpparam) gestito internamente se necessario.
+            SpoofClient(lpparam)
         }
 
         if (!lpparam.isFirstApplication) return
-
-        // Spoof.init rimosso, logica spostata in SpotifyHook -> SpoofClient
 
         // --- NUOVO TRIGGER: LONG CLICK SU ICONA PROFILO ---
         XposedHelpers.findAndHookMethod(

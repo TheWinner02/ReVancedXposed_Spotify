@@ -6,21 +6,19 @@ import android.os.Build
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
-import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
+import de.robv.android.xposed.callbacks.XC_LoadPackage
 import org.luckypray.dexkit.DexKitBridge
-import java.util.UUID
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 private var listener: RequestListener? = null
 
-fun SpotifyHook.SpoofClient() {
+fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val port = 4345
     val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
     val iosUserAgent = "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)"
     val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
     
+    val classLoader = lpparam.classLoader
     XposedBridge.log("SPOOF-CLIENT: Inizializzazione Raffinata iOS Spoofing")
 
     // 1. Hook di Sistema (Semplificato per evitare blocchi Samsung/PlayProtect)
