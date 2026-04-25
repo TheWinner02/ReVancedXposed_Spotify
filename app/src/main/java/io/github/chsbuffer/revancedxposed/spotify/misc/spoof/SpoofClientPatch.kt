@@ -9,6 +9,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
+import org.luckypray.dexkit.DexKitBridge
 
 @OptIn(ExperimentalSerializationApi::class)
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
@@ -20,7 +21,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
     val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
     
-    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità IN-MEMORY (Zero Proxy)")
+    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità IBRIDA (DexKit + RAM)")
 
     // 1. Bypass Device ID (Anti-Samsung Knox)
     runCatching {
@@ -114,6 +115,34 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
             }
         )
     }
+
+    // 4. DexKit Platform Spoof (Senza caricamento manuale lib)
+    runCatching { System.loadLibrary("dexkit") }
+    Thread {
+        runCatching {
+            val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
+            DexKitBridge.create(apkPath).use { bridge ->
+                bridge.findMethod {
+                    matcher {
+                        returnType = "java.lang.String"
+                        usingStrings("android")
+                    }
+                }.forEach { mData ->
+                    runCatching {
+                        val method = mData.getMethodInstance(classLoader)
+                        if (method.declaringClass.name.contains("spotify")) {
+                            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                                override fun beforeHookedMethod(p: MethodHookParam) { p.result = "ios" }
+                            })
+                        }
+                    }
+                }
+                XposedBridge.log("SPOOF-DEBUG: DexKit Platform Spoof completato")
+            }
+        }.onFailure {
+            XposedBridge.log("SPOOF-DEBUG [ERROR]: DexKit fallito: ${it.message}")
+        }
+    }.apply { priority = Thread.MAX_PRIORITY }.start()
 }
 
 private fun hexToBytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
