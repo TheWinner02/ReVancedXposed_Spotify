@@ -1,7 +1,5 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.spoof
 
-import android.content.pm.PackageInfo
-import android.content.pm.Signature
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -10,20 +8,36 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import org.luckypray.dexkit.DexKitBridge
+import javax.net.ssl.X509TrustManager
+import java.security.cert.X509Certificate
 
 @OptIn(ExperimentalSerializationApi::class)
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val classLoader = lpparam.classLoader
     
-    // Identità Master V8.8.84 (La più stabile per il login)
+    // Identità Master V8.8.84
     val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
     val iosUserAgent = "Spotify/8.8.84 iOS/17.7.2 (iPhone16,1)"
     val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
-    val spotifySha = "6505b181933344f93893d586e399b94616183f04349cb572a9e81a3335e28ffd"
     
-    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità DEFINITIVA (Direct In-Memory)")
+    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE (Direct RAM + SSL Bypass)")
 
-    // 1. Bypass Device ID (Anti-Samsung Knox)
+    // 1. SSL PINNING BYPASS (Elimina la schermata nera di protezione)
+    runCatching {
+        val trustManagerClass = XposedHelpers.findClass("com.android.org.conscrypt.TrustManagerImpl", classLoader)
+        XposedHelpers.findAndHookMethod(
+            trustManagerClass,
+            "checkServerTrusted",
+            Array<X509Certificate>::class.java,
+            String::class.java,
+            String::class.java,
+            object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) { param.result = null }
+            }
+        )
+    }
+
+    // 2. Bypass Device ID (Anti-Samsung Knox)
     runCatching {
         XposedHelpers.findAndHookMethod(
             "android.provider.Settings\$Secure",
@@ -41,23 +55,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         )
     }
 
-    // 2. Signature Spoof (Indispensabile per caricamento lib)
-    runCatching {
-        val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
-        XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                val pkg = param.args[0] as? String ?: return
-                if (pkg.contains("spotify")) {
-                    val info = param.result as? PackageInfo ?: return
-                    @Suppress("DEPRECATION")
-                    info.signatures = arrayOf(Signature(hexToBytes(spotifySha)))
-                    param.result = info
-                }
-            }
-        })
-    }
-
-    // 3. Hook NativeHttpConnection (Trasformazione Payload in RAM)
+    // 3. Hook NativeHttpConnection con TRASFORMAZIONE IN-MEMORY
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -94,7 +92,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                         }
                     }
 
-                    // SPOOFING HEADER (Login5 e spclient)
+                    // SPOOFING HEADER (Identità Protetta)
                     if (url.contains("spotify.com") || url.contains("spclient")) {
                         runCatching {
                             val headersField = req.javaClass.declaredFields.find { it.type == Map::class.java }
@@ -116,7 +114,8 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         )
     }
 
-    // 4. DexKit Platform Spoof (Ripristinato dopo analisi log)
+    // 4. DexKit Platform Spoof (Sblocco Configurazioni)
+    runCatching { System.loadLibrary("dexkit") }
     Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
