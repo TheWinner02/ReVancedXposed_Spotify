@@ -60,6 +60,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     }
 
     // 3. KILL INTEGRITY VERIFICATION (Fingerprint System)
+    runCatching { System.loadLibrary("dexkit") }
     Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
