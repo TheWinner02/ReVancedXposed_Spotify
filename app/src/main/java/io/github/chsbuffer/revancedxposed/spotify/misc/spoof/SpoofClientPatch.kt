@@ -1,28 +1,34 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.spoof
 
+import android.content.pm.PackageInfo
+import android.content.pm.Signature
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.INTEGRITY_PROTECTION_METHOD
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.INTEGRITY_PROTECTION_PACKAGE
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_CLIENT_ID
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_DEVICE_ID
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_USER_AGENT
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_VERSION
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.PLATFORM_IDENTIFIER_STRING
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.PLATFORM_IOS_TARGET
+import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.SPOTIFY_ORIGINAL_SHA
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import org.luckypray.dexkit.DexKitBridge
-import javax.net.ssl.X509TrustManager
 import java.security.cert.X509Certificate
 
 @OptIn(ExperimentalSerializationApi::class)
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val classLoader = lpparam.classLoader
     
-    // Identità Master V8.8.84
-    val iosClientId = "58bd3c95768941ea9eb4350aaa033eb3"
-    val iosUserAgent = "Spotify/8.8.84 iOS/17.7.2 (iPhone16,1)"
-    val iosStaticDeviceId = "2A084F20-1307-3AE0-83C8-AE5CA4AB5CD0"
-    
-    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE (Direct RAM + SSL Bypass)")
+    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE v4.7 (Modular + Response Hook)")
 
-    // 1. SSL PINNING BYPASS (Elimina la schermata nera di protezione)
+    // 1. SSL PINNING BYPASS
     runCatching {
         val trustManagerClass = XposedHelpers.findClass("com.android.org.conscrypt.TrustManagerImpl", classLoader)
         XposedHelpers.findAndHookMethod(
@@ -37,25 +43,64 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         )
     }
 
-    // 2. Bypass Device ID (Anti-Samsung Knox)
+    // 2. Signature Spoof
     runCatching {
-        XposedHelpers.findAndHookMethod(
-            "android.provider.Settings\$Secure",
-            classLoader,
-            "getString",
-            android.content.ContentResolver::class.java,
-            String::class.java,
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    if (param.args[1] == "android_id") {
-                        param.result = "2A084F2013073AE0"
+        val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
+        XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val pkg = param.args[0] as? String ?: return
+                if (pkg.contains("spotify")) {
+                    val info = param.result as? PackageInfo ?: return
+                    @Suppress("DEPRECATION")
+                    info.signatures = arrayOf(Signature(hexToBytes(SPOTIFY_ORIGINAL_SHA)))
+                    param.result = info
+                }
+            }
+        })
+    }
+
+    // 3. KILL INTEGRITY VERIFICATION (Fingerprint System)
+    Thread {
+        runCatching {
+            val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
+            DexKitBridge.create(apkPath).use { bridge ->
+                bridge.findMethod {
+                    matcher { returnType = "V" }
+                }.forEach { mData ->
+                    if (mData.methodName == INTEGRITY_PROTECTION_METHOD && 
+                        mData.descriptor.contains(INTEGRITY_PROTECTION_PACKAGE)) {
+                         runCatching {
+                            val method = mData.getMethodInstance(classLoader)
+                            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                                override fun beforeHookedMethod(p: MethodHookParam) { 
+                                    p.result = null 
+                                    XposedBridge.log("SPOOF-DEBUG: Integrity Protection BYPASSED")
+                                }
+                            })
+                        }
+                    }
+                }
+
+                bridge.findMethod {
+                    matcher {
+                        returnType = "java.lang.String"
+                        usingStrings(PLATFORM_IDENTIFIER_STRING)
+                    }
+                }.forEach { mData ->
+                    runCatching {
+                        val method = mData.getMethodInstance(classLoader)
+                        if (method.declaringClass.name.contains("spotify")) {
+                            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                                override fun beforeHookedMethod(p: MethodHookParam) { p.result = PLATFORM_IOS_TARGET }
+                            })
+                        }
                     }
                 }
             }
-        )
-    }
+        }
+    }.apply { priority = Thread.MAX_PRIORITY }.start()
 
-    // 3. Hook NativeHttpConnection con TRASFORMAZIONE IN-MEMORY
+    // 4. Hook NativeHttpConnection (RAM Transform + Response Decoding)
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -71,28 +116,25 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     val req = param.args[0]
                     val url = (urlField.get(req) as? String) ?: return
 
-                    // TRASFORMAZIONE TOKEN (In-Memory, Connessione Diretta HTTPS)
                     if (url.contains("clienttoken.spotify.com/v1/clienttoken")) {
                         bodyField?.let { field ->
                             val originalBody = field.get(req) as? ByteArray
-                            XposedBridge.log("SPOOF-DEBUG: Trasformazione RAM (${originalBody?.size} bytes -> iOS Master)")
+                            XposedBridge.log("SPOOF-DEBUG: RAM Intercept Token Request (${originalBody?.size} bytes)")
                             
                             val iosData = NativeIOSData(userInterfaceIdiom = 0, targetIphoneSimulator = false, hwMachine = "iPhone16,1", systemVersion = "17.7.2", simulatorModelIdentifier = "")
                             val transformedRequest = ClientTokenRequest(
                                 requestType = ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST,
                                 clientData = ClientDataRequest(
-                                    clientVersion = "iphone-8.8.84.502",
-                                    clientId = iosClientId,
-                                    connectivitySdkData = ConnectivitySdkData(deviceId = iosStaticDeviceId, platformSpecificData = PlatformSpecificData(ios = iosData))
+                                    clientVersion = MASTER_VERSION,
+                                    clientId = MASTER_CLIENT_ID,
+                                    connectivitySdkData = ConnectivitySdkData(deviceId = MASTER_DEVICE_ID, platformSpecificData = PlatformSpecificData(ios = iosData))
                                 )
                             )
-                            
                             val iosBody = ProtoBuf.encodeToByteArray(transformedRequest)
                             field.set(req, iosBody)
                         }
                     }
 
-                    // SPOOFING HEADER (Identità Protetta)
                     if (url.contains("spotify.com") || url.contains("spclient")) {
                         runCatching {
                             val headersField = req.javaClass.declaredFields.find { it.type == Map::class.java }
@@ -101,10 +143,10 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                                 @Suppress("UNCHECKED_CAST")
                                 val map = it.get(req) as? MutableMap<String, String>
                                 map?.let { m ->
-                                    m["User-Agent"] = iosUserAgent
-                                    m["App-Platform"] = "ios"
-                                    m["X-Client-Id"] = iosClientId
-                                    m["X-Spotify-Device-Id"] = iosStaticDeviceId
+                                    m["User-Agent"] = MASTER_USER_AGENT
+                                    m["App-Platform"] = PLATFORM_IOS_TARGET
+                                    m["X-Client-Id"] = MASTER_CLIENT_ID
+                                    m["X-Spotify-Device-Id"] = MASTER_DEVICE_ID
                                 }
                             }
                         }
@@ -112,35 +154,27 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                 }
             }
         )
-    }
 
-    // 4. DexKit Platform Spoof (Sblocco Configurazioni)
-    runCatching { System.loadLibrary("dexkit") }
-    Thread {
-        runCatching {
-            val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
-            DexKitBridge.create(apkPath).use { bridge ->
-                bridge.findMethod {
-                    matcher {
-                        returnType = "java.lang.String"
-                        usingStrings("android")
-                    }
-                }.forEach { mData ->
+        // Intercettiamo il RITORNO del token per completare il debug a 4 stadi in RAM
+        XposedBridge.hookAllMethods(
+            httpConnectionImpl,
+            "onBytesAvailable",
+            object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val bytes = param.args[0] as? ByteArray ?: return
                     runCatching {
-                        val method = mData.getMethodInstance(classLoader)
-                        if (method.declaringClass.name.contains("spotify")) {
-                            XposedBridge.hookMethod(method, object : XC_MethodHook() {
-                                override fun beforeHookedMethod(p: MethodHookParam) { p.result = "ios" }
-                            })
+                        val resp = ProtoBuf.decodeFromByteArray<ClientTokenResponse>(bytes)
+                        if (resp.responseType == ClientTokenResponseType.RESPONSE_CHALLENGES_RESPONSE) {
+                            XposedBridge.log("SPOOF-DEBUG: RITORNO RAM -> CHALLENGE rilevato (Captcha richiesto)")
+                        } else if (resp.responseType == ClientTokenResponseType.RESPONSE_GRANTED_TOKEN_RESPONSE) {
+                            val expires = resp.grantedToken?.expiresAfterSeconds ?: 0
+                            XposedBridge.log("SPOOF-DEBUG: RITORNO RAM -> TOKEN ottenuto! Scadenza: ${expires}s")
                         }
                     }
                 }
-                XposedBridge.log("SPOOF-DEBUG: DexKit Platform Spoof completato")
             }
-        }.onFailure {
-            XposedBridge.log("SPOOF-DEBUG [ERROR]: DexKit fallito: ${it.message}")
-        }
-    }.apply { priority = Thread.MAX_PRIORITY }.start()
+        )
+    }
 }
 
 private fun hexToBytes(hex: String): ByteArray = hex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
