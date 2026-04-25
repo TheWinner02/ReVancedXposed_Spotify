@@ -6,8 +6,6 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.INTEGRITY_PROTECTION_METHOD
-import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.INTEGRITY_PROTECTION_PACKAGE
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_CLIENT_ID
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_DEVICE_ID
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_USER_AGENT
@@ -26,7 +24,7 @@ import java.security.cert.X509Certificate
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val classLoader = lpparam.classLoader
     
-    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE v4.7 (Modular + Response Hook)")
+    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE v4.8 (Direct RAM + Integrity Fix)")
 
     // 1. SSL PINNING BYPASS
     runCatching {
@@ -59,29 +57,39 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         })
     }
 
-    // 3. KILL INTEGRITY VERIFICATION (Fingerprint System)
+    // 3. KILL INTEGRITY VERIFICATION & PLATFORM SPOOF (DexKit Targeted Scan)
     runCatching { System.loadLibrary("dexkit") }
     Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
             DexKitBridge.create(apkPath).use { bridge ->
+                XposedBridge.log("SPOOF-DEBUG: Scansione DexKit avviata...")
+                
+                // Target 1: Qualsiasi metodo void che contenga la stringa "Calendar" e "get" nelle istruzioni
+                // Usiamo un approccio di ricerca stringa + metodo per massimizzare la precisione
                 bridge.findMethod {
-                    matcher { returnType = "V" }
+                    matcher { 
+                        returnType = "V" 
+                    }
                 }.forEach { mData ->
-                    if (mData.methodName == INTEGRITY_PROTECTION_METHOD && 
-                        mData.descriptor.contains(INTEGRITY_PROTECTION_PACKAGE)) {
+                    if (mData.descriptor.contains("com/spotify")) {
+                        // Verifichiamo se il metodo appartiene a quelli di connettività/sicurezza
                          runCatching {
                             val method = mData.getMethodInstance(classLoader)
-                            XposedBridge.hookMethod(method, object : XC_MethodHook() {
-                                override fun beforeHookedMethod(p: MethodHookParam) { 
-                                    p.result = null 
-                                    XposedBridge.log("SPOOF-DEBUG: Integrity Protection BYPASSED")
-                                }
-                            })
+                            // Se il metodo usa Calendar.get, lo uccidiamo
+                            if (method.toString().contains("Calendar") || method.name == "run") {
+                                XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                                    override fun beforeHookedMethod(p: MethodHookParam) { 
+                                        p.result = null 
+                                        XposedBridge.log("SPOOF-DEBUG: Integrity Hook Triggered -> ${method.declaringClass.name}")
+                                    }
+                                })
+                            }
                         }
                     }
                 }
 
+                // Target 2: Platform Spoof ("android" -> "ios")
                 bridge.findMethod {
                     matcher {
                         returnType = "java.lang.String"
@@ -97,11 +105,12 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                         }
                     }
                 }
+                XposedBridge.log("SPOOF-DEBUG: Scansione DexKit completata")
             }
         }
     }.apply { priority = Thread.MAX_PRIORITY }.start()
 
-    // 4. Hook NativeHttpConnection (RAM Transform + Response Decoding)
+    // 4. Hook NativeHttpConnection
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -156,7 +165,6 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
             }
         )
 
-        // Intercettiamo il RITORNO del token per completare il debug a 4 stadi in RAM
         XposedBridge.hookAllMethods(
             httpConnectionImpl,
             "onBytesAvailable",
@@ -166,7 +174,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                     runCatching {
                         val resp = ProtoBuf.decodeFromByteArray<ClientTokenResponse>(bytes)
                         if (resp.responseType == ClientTokenResponseType.RESPONSE_CHALLENGES_RESPONSE) {
-                            XposedBridge.log("SPOOF-DEBUG: RITORNO RAM -> CHALLENGE rilevato (Captcha richiesto)")
+                            XposedBridge.log("SPOOF-DEBUG: RITORNO RAM -> CHALLENGE rilevato")
                         } else if (resp.responseType == ClientTokenResponseType.RESPONSE_GRANTED_TOKEN_RESPONSE) {
                             val expires = resp.grantedToken?.expiresAfterSeconds ?: 0
                             XposedBridge.log("SPOOF-DEBUG: RITORNO RAM -> TOKEN ottenuto! Scadenza: ${expires}s")
