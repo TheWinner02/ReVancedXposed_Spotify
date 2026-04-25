@@ -27,9 +27,9 @@ enum class ClientTokenResponseType {
 data class NativeIOSData(
     @ProtoNumber(1) val userInterfaceIdiom: Int = 0,
     @ProtoNumber(2) val targetIphoneSimulator: Boolean = false,
-    @ProtoNumber(3) val hwMachine: String = "",
-    @ProtoNumber(4) val systemVersion: String = "",
-    @ProtoNumber(5) val simulatorModelIdentifier: String = ""
+    @ProtoNumber(3) val hwMachine: String = "iPhone16,1",
+    @ProtoNumber(4) val systemVersion: String = "17.7.2",
+    @ProtoNumber(5) val simulatorModelIdentifier: String = "" // Campo vitale per la densità del pacchetto
 )
 
 @OptIn(ExperimentalSerializationApi::class)
