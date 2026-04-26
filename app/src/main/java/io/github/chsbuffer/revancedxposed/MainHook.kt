@@ -167,7 +167,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     }
 
     private fun prepareOriginalApk(lpparam: LoadPackageParam): File? {
-        val internalApk = File(lpparam.appInfo.dataDir, "cache/spotify_orig.apk")
+        val internalApk = File(lpparam.appInfo.dataDir, "cache/base.apk")
         
         // Elenco di percorsi dove l'utente può mettere l'APK originale
         val potentialPaths = listOf(
@@ -197,7 +197,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     }
 
     private fun spoofSignature(lpparam: LoadPackageParam) {
-        val originalApkPath = File(lpparam.appInfo.dataDir, "cache/spotify_orig.apk").absolutePath
+        val originalApkPath = File(lpparam.appInfo.dataDir, "cache/base.apk").absolutePath
         val targetPkg = "com.spotify.music"
 
         // 1. Hook PackageManager (Legacy and Modern)
