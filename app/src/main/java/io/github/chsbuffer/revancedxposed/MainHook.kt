@@ -40,6 +40,16 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
 
+        // Carica la libreria nativa per Spotify per attivare gli hook Dobby
+        if (lpparam.packageName == "com.spotify.music") {
+            try {
+                System.loadLibrary("revancedxposed")
+                XposedBridge.log("Native library 'revancedxposed' loaded successfully for Spotify")
+            } catch (e: Throwable) {
+                XposedBridge.log("Failed to load native library 'revancedxposed': ${e.message}")
+            }
+        }
+
         // --- NUOVO TRIGGER: LONG CLICK SU ICONA PROFILO ---
         XposedHelpers.findAndHookMethod(
             "android.app.Activity",

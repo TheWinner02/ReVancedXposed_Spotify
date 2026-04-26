@@ -1,0 +1,3 @@
+[submodule "app/src/main/cpp/external/dobby"]
+	path = app/src/main/cpp/external/dobby
+	url = https://github.com/LSPosed/Dobby
