@@ -19,6 +19,10 @@ import io.github.chsbuffer.revancedxposed.spotify.RoundyUIHook
 import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.content.pm.Signature
+import android.util.Log
 import androidx.core.view.isNotEmpty
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
@@ -41,6 +45,16 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
+
+        // --- SIGNATURE SPOOFING ---
+        if (lpparam.packageName == "com.spotify.music") {
+            try {
+                spoofSignature(lpparam)
+                XposedBridge.log("ReVancedXposed: Signature spoofing initialized")
+            } catch (e: Throwable) {
+                XposedBridge.log("ReVancedXposed: Signature spoofing failed: ${e.message}")
+            }
+        }
 
         // Carica la libreria nativa per Spotify per attivare gli hook Dobby
         if (lpparam.packageName == "com.spotify.music") {
@@ -147,6 +161,45 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             }
             
         }
+    }
+
+    private fun spoofSignature(lpparam: LoadPackageParam) {
+        val originalApkPath = "/sdcard/Download/base.apk"
+        
+        // Hook PackageManager.getPackageInfo
+        XposedHelpers.findAndHookMethod(
+            "android.app.ApplicationPackageManager",
+            lpparam.classLoader,
+            "getPackageInfo",
+            String::class.java,
+            Int::class.javaPrimitiveType,
+            object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val pkgName = param.args[0] as String
+                    val flags = param.args[1] as Int
+                    
+                    if (pkgName == "com.spotify.music" && 
+                        (flags and PackageManager.GET_SIGNATURES != 0 || flags and PackageManager.GET_SIGNING_CERTIFICATES != 0)) {
+                        
+                        val info = param.result as? PackageInfo ?: return
+                        
+                        try {
+                            // Leggiamo la firma dall'APK originale
+                            val pm = (param.thisObject as PackageManager)
+                            val fmi = pm.getPackageArchiveInfo(originalApkPath, PackageManager.GET_SIGNATURES)
+                            val originalSignatures = fmi?.signatures
+                            
+                            if (originalSignatures != null && originalSignatures.isNotEmpty()) {
+                                info.signatures = originalSignatures
+                                XposedBridge.log("ReVancedXposed: Successfully spoofed signatures from $originalApkPath")
+                            }
+                        } catch (e: Exception) {
+                            XposedBridge.log("ReVancedXposed: Error reading original signatures: ${e.message}")
+                        }
+                    }
+                }
+            }
+        )
     }
 
     // Funzione per impostare il listener e dare feedback
