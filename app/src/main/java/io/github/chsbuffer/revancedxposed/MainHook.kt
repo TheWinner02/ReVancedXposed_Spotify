@@ -21,9 +21,10 @@ import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.content.pm.Signature
 import android.util.Log
 import androidx.core.view.isNotEmpty
+import java.io.File
+import android.os.Environment
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var startupParam: StartupParam
@@ -63,7 +64,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 System.loadLibrary("revancedxposed")
                 XposedBridge.log("ReVancedXposed: Native library 'revancedxposed' loaded successfully")
             } catch (e: UnsatisfiedLinkError) {
-                XposedBridge.log("ReVancedXposed: Native library not found. Ensure it's included in the APK.")
+                XposedBridge.log("ReVancedXposed: Native library not found: ${e.message}")
             } catch (e: Throwable) {
                 XposedBridge.log("ReVancedXposed: Error loading native library: ${e.message}")
                 e.printStackTrace()
@@ -164,42 +165,88 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     }
 
     private fun spoofSignature(lpparam: LoadPackageParam) {
-        val originalApkPath = "/sdcard/Download/base.apk"
+        val originalApkPath = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk").absolutePath
+        val targetPkg = "com.spotify.music"
+
+        // 1. Hook PackageManager (Legacy and Modern)
+        val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", lpparam.classLoader)
         
-        // Hook PackageManager.getPackageInfo
-        XposedHelpers.findAndHookMethod(
-            "android.app.ApplicationPackageManager",
-            lpparam.classLoader,
-            "getPackageInfo",
-            String::class.java,
-            Int::class.javaPrimitiveType,
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val pkgName = param.args[0] as String
-                    val flags = param.args[1] as Int
-                    
-                    if (pkgName == "com.spotify.music" && 
-                        (flags and PackageManager.GET_SIGNATURES != 0 || flags and PackageManager.GET_SIGNING_CERTIFICATES != 0)) {
+        val pmHook = object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val pkgName = param.args[0] as String
+                if (pkgName != targetPkg) return
+
+                val info = param.result as? PackageInfo ?: return
+                XposedBridge.log("ReVancedXposed: Intercepted getPackageInfo for $targetPkg")
+                
+                applyOriginalSignature(info, originalApkPath, param.thisObject as PackageManager)
+            }
+        }
+
+        // HookInt flags version
+        XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, pmHook)
+        
+        // Hook PackageInfoFlags version (Android 13+)
+        try {
+            val flagsClass = XposedHelpers.findClass("android.content.pm.PackageManager\$PackageInfoFlags", lpparam.classLoader)
+            XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, flagsClass, pmHook)
+        } catch (ignored: Throwable) {
+            // Probably older Android version
+        }
+
+        // 2. Deep Hook: IPackageManager (ActivityThread)
+        try {
+            val activityThreadClass = XposedHelpers.findClass("android.app.ActivityThread", lpparam.classLoader)
+            val sPackageManagerField = XposedHelpers.findField(activityThreadClass, "sPackageManager")
+            val originalProxy = sPackageManagerField.get(null)
+
+            if (originalProxy != null) {
+                XposedBridge.log("ReVancedXposed: Deep hooking IPackageManager proxy")
+                XposedBridge.hookAllMethods(originalProxy.javaClass, "getPackageInfo", object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val pkgName = param.args[0] as? String ?: return
+                        if (pkgName != targetPkg) return
                         
                         val info = param.result as? PackageInfo ?: return
+                        XposedBridge.log("ReVancedXposed: IPackageManager intercepted $targetPkg")
                         
-                        try {
-                            // Leggiamo la firma dall'APK originale
-                            val pm = (param.thisObject as PackageManager)
-                            val fmi = pm.getPackageArchiveInfo(originalApkPath, PackageManager.GET_SIGNATURES)
-                            val originalSignatures = fmi?.signatures
-                            
-                            if (originalSignatures != null && originalSignatures.isNotEmpty()) {
-                                info.signatures = originalSignatures
-                                XposedBridge.log("ReVancedXposed: Successfully spoofed signatures from $originalApkPath")
-                            }
-                        } catch (e: Exception) {
-                            XposedBridge.log("ReVancedXposed: Error reading original signatures: ${e.message}")
+                        // Use system package manager to get signatures from archive
+                        val context = XposedHelpers.callStaticMethod(activityThreadClass, "currentApplication") as? android.content.Context
+                        val pm = context?.packageManager
+                        if (pm != null) {
+                            applyOriginalSignature(info, originalApkPath, pm)
                         }
                     }
-                }
+                })
             }
-        )
+        } catch (e: Throwable) {
+            XposedBridge.log("ReVancedXposed: Failed to deep hook IPackageManager: ${e.message}")
+        }
+    }
+
+    private fun applyOriginalSignature(info: PackageInfo, originalApkPath: String, pm: PackageManager) {
+        try {
+            val fmi = pm.getPackageArchiveInfo(originalApkPath, PackageManager.GET_SIGNATURES)
+            val originalSignatures = fmi?.signatures
+            
+            if (originalSignatures != null && originalSignatures.isNotEmpty()) {
+                info.signatures = originalSignatures
+                // Update SigningInfo for Android 9+
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    try {
+                        val signingInfoClass = XposedHelpers.findClass("android.content.pm.SigningInfo", pm.javaClass.classLoader)
+                        val signingInfo = XposedHelpers.newInstance(signingInfoClass)
+                        // This is more complex on newer versions but setting .signatures often suffices
+                        XposedHelpers.setObjectField(info, "signingInfo", signingInfo)
+                    } catch (ignored: Exception) {
+                        // Ignore signingInfo failures
+                    }
+                }
+                XposedBridge.log("ReVancedXposed: Successfully spoofed signatures from $originalApkPath")
+            }
+        } catch (e: Exception) {
+            XposedBridge.log("ReVancedXposed: Error applying signatures: ${e.message}")
+        }
     }
 
     // Funzione per impostare il listener e dare feedback
