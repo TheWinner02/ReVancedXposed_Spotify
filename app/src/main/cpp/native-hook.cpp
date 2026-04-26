@@ -5,34 +5,41 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <dlfcn.h>
+#include <sys/system_properties.h>
 #include "dobby.h"
 
 #define LOG_TAG "ReVancedXposedNative"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// Global to store the internal APK path
 static char internal_apk_path[512] = "";
 
-// Function to check if the path is the Spotify base.apk
 bool is_spotify_apk(const char* pathname) {
     if (pathname == nullptr || strlen(internal_apk_path) == 0) return false;
     return (strstr(pathname, "com.spotify.music") != nullptr) && (strstr(pathname, "base.apk") != nullptr);
 }
 
-// Function types for the original functions
+// Function types
 typedef int (*open_t)(const char*, int, ...);
 typedef int (*openat_t)(int, const char*, int, ...);
 typedef int (*access_t)(const char*, int);
 typedef int (*fstatat_t)(int, const char*, struct stat*, int);
+typedef int (*stat_t)(const char*, struct stat*);
+typedef int (*lstat_t)(const char*, struct stat*);
+typedef ssize_t (*readlink_t)(const char*, char*, size_t);
+typedef int (*__system_property_get_t)(const char*, char*);
 
-// Original function pointers
+// Original pointers
 static open_t orig_open = nullptr;
 static openat_t orig_openat = nullptr;
 static access_t orig_access = nullptr;
 static fstatat_t orig_fstatat = nullptr;
+static stat_t orig_stat = nullptr;
+static lstat_t orig_lstat = nullptr;
+static readlink_t orig_readlink = nullptr;
+static __system_property_get_t orig_prop_get = nullptr;
 
-// Hook for open
+// Hooks
 int my_open(const char* pathname, int flags, mode_t mode) {
     if (is_spotify_apk(pathname)) {
         LOGI("Redirecting open: %s -> %s", pathname, internal_apk_path);
@@ -41,7 +48,6 @@ int my_open(const char* pathname, int flags, mode_t mode) {
     return orig_open(pathname, flags, mode);
 }
 
-// Hook for openat
 int my_openat(int dirfd, const char* pathname, int flags, mode_t mode) {
     if (is_spotify_apk(pathname)) {
         LOGI("Redirecting openat: %s -> %s", pathname, internal_apk_path);
@@ -50,7 +56,6 @@ int my_openat(int dirfd, const char* pathname, int flags, mode_t mode) {
     return orig_openat(dirfd, pathname, flags, mode);
 }
 
-// Hook for access
 int my_access(const char* pathname, int mode) {
     if (is_spotify_apk(pathname)) {
         LOGI("Redirecting access: %s -> %s", pathname, internal_apk_path);
@@ -59,13 +64,49 @@ int my_access(const char* pathname, int mode) {
     return orig_access(pathname, mode);
 }
 
-// Hook for fstatat
 int my_fstatat(int dirfd, const char* pathname, struct stat* buf, int flags) {
     if (is_spotify_apk(pathname)) {
         LOGI("Redirecting fstatat: %s -> %s", pathname, internal_apk_path);
         return orig_fstatat(dirfd, internal_apk_path, buf, flags);
     }
     return orig_fstatat(dirfd, pathname, buf, flags);
+}
+
+int my_stat(const char* pathname, struct stat* buf) {
+    if (is_spotify_apk(pathname)) {
+        LOGI("Redirecting stat: %s -> %s", pathname, internal_apk_path);
+        return orig_stat(internal_apk_path, buf);
+    }
+    return orig_stat(pathname, buf);
+}
+
+int my_lstat(const char* pathname, struct stat* buf) {
+    if (is_spotify_apk(pathname)) {
+        LOGI("Redirecting lstat: %s -> %s", pathname, internal_apk_path);
+        return orig_lstat(internal_apk_path, buf);
+    }
+    return orig_lstat(pathname, buf);
+}
+
+ssize_t my_readlink(const char* pathname, char* buf, size_t bufsiz) {
+    if (is_spotify_apk(pathname)) {
+        LOGI("Redirecting readlink: %s", pathname);
+        return orig_readlink(internal_apk_path, buf, bufsiz);
+    }
+    return orig_readlink(pathname, buf, bufsiz);
+}
+
+// Spoof system properties to hide root/debugging
+int my_system_property_get(const char* name, char* value) {
+    int ret = orig_prop_get(name, value);
+    if (name != nullptr && value != nullptr) {
+        if (strstr(name, "ro.debuggable") || strstr(name, "ro.secure")) {
+            if (strstr(name, "ro.debuggable")) strcpy(value, "0");
+            if (strstr(name, "ro.secure")) strcpy(value, "1");
+            LOGI("Spoofed property: %s -> %s", name, value);
+        }
+    }
+    return ret;
 }
 
 extern "C" JNIEXPORT void JNICALL Java_io_github_chsbuffer_revancedxposed_MainHook_setInternalApkPath(JNIEnv* env, jobject thiz, jstring path) {
@@ -79,25 +120,29 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_chsbuffer_revancedxposed_MainHo
 }
 
 void install_hooks() {
-    LOGI("Installing native hooks with Dobby...");
+    LOGI("Installing advanced native hooks with Dobby...");
 
     void* libc = dlopen("libc.so", RTLD_LAZY);
-    if (!libc) {
-        LOGE("Failed to open libc.so: %s", dlerror());
-        return;
+    if (libc) {
+        DobbyHook(dlsym(libc, "open"), (dobby_dummy_func_t)my_open, (dobby_dummy_func_t*)&orig_open);
+        DobbyHook(dlsym(libc, "openat"), (dobby_dummy_func_t)my_openat, (dobby_dummy_func_t*)&orig_openat);
+        DobbyHook(dlsym(libc, "access"), (dobby_dummy_func_t)my_access, (dobby_dummy_func_t*)&orig_access);
+        DobbyHook(dlsym(libc, "fstatat"), (dobby_dummy_func_t)my_fstatat, (dobby_dummy_func_t*)&orig_fstatat);
+
+        void* stat_addr = dlsym(libc, "stat");
+        if (stat_addr) DobbyHook(stat_addr, (dobby_dummy_func_t)my_stat, (dobby_dummy_func_t*)&orig_stat);
+
+        void* lstat_addr = dlsym(libc, "lstat");
+        if (lstat_addr) DobbyHook(lstat_addr, (dobby_dummy_func_t)my_lstat, (dobby_dummy_func_t*)&orig_lstat);
+
+        void* readlink_addr = dlsym(libc, "readlink");
+        if (readlink_addr) DobbyHook(readlink_addr, (dobby_dummy_func_t)my_readlink, (dobby_dummy_func_t*)&orig_readlink);
+
+        void* prop_get_addr = dlsym(libc, "__system_property_get");
+        if (prop_get_addr) DobbyHook(prop_get_addr, (dobby_dummy_func_t)my_system_property_get, (dobby_dummy_func_t*)&orig_prop_get);
     }
 
-    void* open_addr = dlsym(libc, "open");
-    void* openat_addr = dlsym(libc, "openat");
-    void* access_addr = dlsym(libc, "access");
-    void* fstatat_addr = dlsym(libc, "fstatat");
-
-    if (open_addr) DobbyHook(open_addr, (dobby_dummy_func_t)my_open, (dobby_dummy_func_t*)&orig_open);
-    if (openat_addr) DobbyHook(openat_addr, (dobby_dummy_func_t)my_openat, (dobby_dummy_func_t*)&orig_openat);
-    if (access_addr) DobbyHook(access_addr, (dobby_dummy_func_t)my_access, (dobby_dummy_func_t*)&orig_access);
-    if (fstatat_addr) DobbyHook(fstatat_addr, (dobby_dummy_func_t)my_fstatat, (dobby_dummy_func_t*)&orig_fstatat);
-
-    LOGI("Native hooks installation attempt finished. Open addr: %p", open_addr);
+    LOGI("Advanced native hooks installed.");
 }
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {

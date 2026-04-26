@@ -25,6 +25,7 @@ import android.util.Log
 import androidx.core.view.isNotEmpty
 import java.io.File
 import android.os.Environment
+import android.provider.Settings
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var startupParam: StartupParam
@@ -54,6 +55,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 val internalApk = prepareOriginalApk(lpparam)
                 spoofSignature(lpparam)
                 hideXposedFromStackTrace()
+                bypassAndroidIdRestriction(lpparam)
                 XposedBridge.log("ReVancedXposed: Stealth mechanisms initialized")
                 
                 // Carica la libreria nativa per Spotify per attivare gli hook Dobby
@@ -329,6 +331,28 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         } catch (e: Throwable) {
             XposedBridge.log("ReVancedXposed: Failed to hook stack trace: ${e.message}")
         }
+    }
+
+    private fun bypassAndroidIdRestriction(lpparam: LoadPackageParam) {
+        // Spoof Settings.Secure.ANDROID_ID to avoid "not approved" errors
+        XposedHelpers.findAndHookMethod(
+            "android.provider.Settings\$Secure",
+            lpparam.classLoader,
+            "getString",
+            android.content.ContentResolver::class.java,
+            String::class.java,
+            object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val name = param.args[1] as? String
+                    if (name == Settings.Secure.ANDROID_ID) {
+                        // Return a generic/fake Android ID if needed, 
+                        // but usually just allowing the call suffices or returning a valid-looking hex
+                        param.result = "8888888888888888" 
+                        XposedBridge.log("ReVancedXposed: Spoofed ANDROID_ID for Spotify")
+                    }
+                }
+            }
+        )
     }
 
     // Funzione per impostare il listener e dare feedback
