@@ -167,24 +167,32 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     }
 
     private fun prepareOriginalApk(lpparam: LoadPackageParam): File? {
-        val publicApk = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk")
         val internalApk = File(lpparam.appInfo.dataDir, "cache/spotify_orig.apk")
+        
+        // Elenco di percorsi dove l'utente può mettere l'APK originale
+        val potentialPaths = listOf(
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk"),
+            File("/sdcard/Android/media/${lpparam.packageName}/base.apk"),
+            File("/sdcard/Download/base.apk")
+        )
 
-        if (!internalApk.exists() || (publicApk.exists() && publicApk.lastModified() > internalApk.lastModified())) {
-            if (publicApk.exists()) {
-                XposedBridge.log("ReVancedXposed: Copying original APK from Download to internal cache...")
-                try {
-                    internalApk.parentFile?.mkdirs()
-                    publicApk.copyTo(internalApk, overwrite = true)
-                    internalApk.setReadable(true, false)
-                    XposedBridge.log("ReVancedXposed: APK copied successfully to ${internalApk.absolutePath}")
-                } catch (e: Exception) {
-                    XposedBridge.log("ReVancedXposed: Failed to copy APK: ${e.message}")
-                }
-            } else {
-                XposedBridge.log("ReVancedXposed: Original APK not found in Download. Please place base.apk in Download folder.")
+        val publicApk = potentialPaths.find { it.exists() && it.canRead() }
+
+        if (publicApk != null && (!internalApk.exists() || publicApk.lastModified() > internalApk.lastModified())) {
+            XposedBridge.log("ReVancedXposed: Found original APK at ${publicApk.absolutePath}. Copying to internal cache...")
+            try {
+                internalApk.parentFile?.mkdirs()
+                publicApk.copyTo(internalApk, overwrite = true)
+                internalApk.setReadable(true, false)
+                XposedBridge.log("ReVancedXposed: APK copied successfully to ${internalApk.absolutePath}")
+            } catch (e: Exception) {
+                XposedBridge.log("ReVancedXposed: Failed to copy APK from ${publicApk.absolutePath}: ${e.message}")
             }
+        } else if (!internalApk.exists()) {
+            XposedBridge.log("ReVancedXposed: Original APK not found or not readable in any public folder.")
+            XposedBridge.log("ReVancedXposed: Please ensure base.apk is in Download or Android/media/${lpparam.packageName}/")
         }
+
         return if (internalApk.exists()) internalApk else null
     }
 
