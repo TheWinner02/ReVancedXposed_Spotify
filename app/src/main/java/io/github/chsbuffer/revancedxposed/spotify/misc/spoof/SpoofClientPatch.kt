@@ -2,6 +2,7 @@ package io.github.chsbuffer.revancedxposed.spotify.misc.spoof
 
 import android.content.pm.PackageInfo
 import android.content.pm.Signature
+import android.os.Build
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -9,26 +10,21 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_CLIENT_ID
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_DEVICE_ID
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_USER_AGENT
-import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_VERSION
-import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.PLATFORM_IDENTIFIER_STRING
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.PLATFORM_IOS_TARGET
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.SPOTIFY_ORIGINAL_SHA
 import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.decodeFromByteArray
-import kotlinx.serialization.encodeToByteArray
-import kotlinx.serialization.protobuf.ProtoBuf
 import org.luckypray.dexkit.DexKitBridge
 import java.security.cert.X509Certificate
 
-private var isCalendarHookActive = false
+private var isCalendarActive = false
 
 @OptIn(ExperimentalSerializationApi::class)
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val classLoader = lpparam.classLoader
     
-    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE v5.3 (Light-Precision Mode)")
+    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE v5.4 (Anti-Protection Test)")
 
-    // 1. SSL PINNING BYPASS
+    // 1. SSL PINNING BYPASS (Anti-BlackScreen)
     runCatching {
         val trustManagerClass = XposedHelpers.findClass("com.android.org.conscrypt.TrustManagerImpl", classLoader)
         XposedHelpers.findAndHookMethod(
@@ -43,7 +39,104 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         )
     }
 
-    // 2. Signature Spoof
+    // 2. HARDWARE SPOOF (Deep Identity)
+    runCatching {
+        XposedHelpers.setStaticObjectField(Build::class.java, "MODEL", "iPhone16,1")
+        XposedHelpers.setStaticObjectField(Build::class.java, "MANUFACTURER", "Apple")
+        XposedHelpers.setStaticObjectField(Build::class.java, "BRAND", "Apple")
+        XposedHelpers.setStaticObjectField(Build::class.java, "DEVICE", "iPhone")
+        XposedHelpers.setStaticObjectField(Build::class.java, "PRODUCT", "iPhone16,1")
+    }
+
+    // 3. STEALTH INTEGRITY KILL (DexKit)
+    runCatching { System.loadLibrary("dexkit") }
+    Thread {
+        runCatching {
+            val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
+            DexKitBridge.create(apkPath).use { bridge ->
+                XposedBridge.log("SPOOF-DEBUG: Scansione Integrity Guard...")
+                
+                // Target: Metodi di verifica interna che potrebbero bloccare l'app
+                bridge.findMethod {
+                    matcher { 
+                        returnType = "Z"
+                        usingStrings("com.spotify.music", "integrity")
+                    }
+                }.forEach { mData ->
+                    runCatching {
+                        val method = mData.getMethodInstance(classLoader)
+                        XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                            override fun beforeHookedMethod(p: MethodHookParam) { 
+                                p.result = true 
+                                XposedBridge.log("SPOOF-DEBUG: Integrity Guard BYPASSED -> ${method.name}")
+                            }
+                        })
+                    }
+                }
+                XposedBridge.log("SPOOF-DEBUG: Scansione COMPLETATA")
+            }
+        }
+    }.apply { priority = Thread.MAX_PRIORITY }.start()
+
+    // 4. Hook NativeHttpConnection (Header Spoof - NO BODY TRANSFORMATION per test)
+    runCatching {
+        val cl = classLoader
+        val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
+        val httpRequest = cl.loadClass("com.spotify.core.http.HttpRequest")
+        val urlField = httpRequest.getDeclaredField("url").apply { isAccessible = true }
+
+        XposedBridge.hookAllMethods(
+            httpConnectionImpl,
+            "send",
+            object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val req = param.args[0]
+                    val url = (urlField.get(req) as? String) ?: return
+
+                    if (url.contains("spotify.com") || url.contains("spclient")) {
+                        runCatching {
+                            val headersField = req.javaClass.declaredFields.find { it.type == Map::class.java }
+                            headersField?.let {
+                                it.isAccessible = true
+                                @Suppress("UNCHECKED_CAST")
+                                val map = it.get(req) as? MutableMap<String, String>
+                                map?.let { m ->
+                                    m["User-Agent"] = MASTER_USER_AGENT
+                                    m["App-Platform"] = "ios"
+                                    m["X-Client-Id"] = MASTER_CLIENT_ID
+                                    m["X-Spotify-Device-Id"] = MASTER_DEVICE_ID
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    // 5. CALENDAR STABILITY
+    runCatching {
+        XposedHelpers.findAndHookMethod(
+            "java.util.Calendar",
+            classLoader,
+            "get",
+            Int::class.javaPrimitiveType,
+            object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    if (isCalendarActive) return
+                    isCalendarActive = true
+                    try {
+                        val field = param.args[0] as Int
+                        if (field == 1) param.result = 2024
+                    } finally {
+                        isCalendarActive = false
+                    }
+                }
+            }
+        )
+    }
+
+    // 6. Signature Spoof Deep
     runCatching {
         val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
         XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
@@ -57,138 +150,6 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                 }
             }
         })
-    }
-
-    // 3. LIGHT-PRECISION SPOOF (DexKit Optimized)
-    // Sostituiamo solo le stringhe platform, senza scansione DNA pesante
-    runCatching { System.loadLibrary("dexkit") }
-    Thread {
-        runCatching {
-            val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
-            DexKitBridge.create(apkPath).use { bridge ->
-                XposedBridge.log("SPOOF-DEBUG: Inizio Scansione Stringhe...")
-                
-                bridge.findMethod {
-                    matcher {
-                        returnType = "java.lang.String"
-                        usingStrings(PLATFORM_IDENTIFIER_STRING)
-                    }
-                }.forEach { mData ->
-                    runCatching {
-                        val method = mData.getMethodInstance(classLoader)
-                        // Colpiamo solo i file trovati nel grep (h0f0, kh01, ecc) o pacchetti spotify
-                        if (method.declaringClass.name.contains("spotify") || method.declaringClass.name.contains(".p.")) {
-                            XposedBridge.hookMethod(method, object : XC_MethodHook() {
-                                override fun beforeHookedMethod(p: MethodHookParam) { 
-                                    p.result = PLATFORM_IOS_TARGET 
-                                }
-                            })
-                        }
-                    }
-                }
-                XposedBridge.log("SPOOF-DEBUG: Scansione Stringhe COMPLETATA")
-            }
-        }
-    }.apply { priority = Thread.MAX_PRIORITY }.start()
-
-    // 4. Hook NativeHttpConnection (Direct RAM Transformation)
-    runCatching {
-        val cl = classLoader
-        val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
-        val httpRequest = cl.loadClass("com.spotify.core.http.HttpRequest")
-        val urlField = httpRequest.getDeclaredField("url").apply { isAccessible = true }
-        val bodyField = httpRequest.declaredFields.find { it.type == ByteArray::class.java }?.apply { isAccessible = true }
-
-        XposedBridge.hookAllMethods(
-            httpConnectionImpl,
-            "send",
-            object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val req = param.args[0]
-                    val url = (urlField.get(req) as? String) ?: return
-
-                    if (url.contains("clienttoken.spotify.com/v1/clienttoken")) {
-                        bodyField?.let { field ->
-                            val originalBody = field.get(req) as? ByteArray
-                            XposedBridge.log("SPOOF-DEBUG: RAM Intercept Token Request (${originalBody?.size} bytes)")
-                            
-                            val iosData = NativeIOSData(userInterfaceIdiom = 0, targetIphoneSimulator = false, hwMachine = "iPhone16,1", systemVersion = "17.7.2", simulatorModelIdentifier = "")
-                            val transformedRequest = ClientTokenRequest(
-                                requestType = ClientTokenRequestType.REQUEST_CLIENT_DATA_REQUEST,
-                                clientData = ClientDataRequest(
-                                    clientVersion = MASTER_VERSION,
-                                    clientId = MASTER_CLIENT_ID,
-                                    connectivitySdkData = ConnectivitySdkData(deviceId = MASTER_DEVICE_ID, platformSpecificData = PlatformSpecificData(ios = iosData))
-                                )
-                            )
-                            val iosBody = ProtoBuf.encodeToByteArray(transformedRequest)
-                            field.set(req, iosBody)
-                        }
-                    }
-
-                    if (url.contains("spotify.com") || url.contains("spclient")) {
-                        runCatching {
-                            val headersField = req.javaClass.declaredFields.find { it.type == Map::class.java }
-                            headersField?.let {
-                                it.isAccessible = true
-                                @Suppress("UNCHECKED_CAST")
-                                val map = it.get(req) as? MutableMap<String, String>
-                                map?.let { m ->
-                                    m["User-Agent"] = MASTER_USER_AGENT
-                                    m["App-Platform"] = PLATFORM_IOS_TARGET
-                                    m["X-Client-Id"] = MASTER_CLIENT_ID
-                                    m["X-Spotify-Device-Id"] = MASTER_DEVICE_ID
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        )
-
-        // Response Debug
-        XposedBridge.hookAllMethods(
-            httpConnectionImpl,
-            "onBytesAvailable",
-            object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val bytes = param.args[0] as? ByteArray ?: return
-                    runCatching {
-                        val resp = ProtoBuf.decodeFromByteArray<ClientTokenResponse>(bytes)
-                        if (resp.responseType == ClientTokenResponseType.RESPONSE_CHALLENGES_RESPONSE) {
-                            XposedBridge.log("SPOOF-DEBUG: RITORNO RAM -> CHALLENGE rilevato")
-                        } else if (resp.responseType == ClientTokenResponseType.RESPONSE_GRANTED_TOKEN_RESPONSE) {
-                            val expires = resp.grantedToken?.expiresAfterSeconds ?: 0
-                            XposedBridge.log("SPOOF-DEBUG: RITORNO RAM -> TOKEN ottenuto! Scadenza: ${expires}s")
-                        }
-                    }
-                }
-            }
-        )
-    }
-
-    // 5. CALENDAR STABILITY HOOK (v5.3)
-    runCatching {
-        XposedHelpers.findAndHookMethod(
-            "java.util.Calendar",
-            classLoader,
-            "get",
-            Int::class.javaPrimitiveType,
-            object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    if (isCalendarHookActive) return
-                    isCalendarHookActive = true
-                    try {
-                        val field = param.args[0] as Int
-                        // Restituiamo valori coerenti solo per l'app Spotify
-                        if (field == 1) param.result = 2024
-                        if (field == 11) param.result = 12
-                    } finally {
-                        isCalendarHookActive = false
-                    }
-                }
-            }
-        )
     }
 }
 
