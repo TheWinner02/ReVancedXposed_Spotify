@@ -56,7 +56,8 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 spoofSignature(lpparam)
                 hideXposedFromStackTrace()
                 bypassAndroidIdRestriction(lpparam)
-                XposedBridge.log("ReVancedXposed: Stealth mechanisms initialized")
+                bypassGmsIntegrity(lpparam)
+                XposedBridge.log("ReVancedXposed: Stealth and GMS bypasses initialized")
                 
                 // Carica la libreria nativa per Spotify per attivare gli hook Dobby
                 XposedBridge.log("ReVancedXposed: Attempting to load native library for Spotify...")
@@ -130,7 +131,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             // --- BLOCCO PREMIUM ---
             // Ora è isolato: se Roundy sopra crasha, questo verrà comunque eseguito!
             try {
-                if (prefs.getBoolean("enable_premium", true)) {
+                if (prefs.getBoolean("enable_premium", false)) {
                     hooksByPackage[lpparam.packageName]?.invoke()?.Hook()
                 }
             } catch (e: Exception) {
@@ -140,7 +141,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             // --- BLOCCO: AD BLOCK ---
             try {
                 // Puoi aggiungere "enable_adblock" nel tuo SettingsSheet più tardi
-                if (prefs.getBoolean("enable_adblock", true)) {
+                if (prefs.getBoolean("enable_adblock", false)) {
                     AdBlockHook(lpparam).hook()
                     XposedBridge.log("AdBlocker: Modulo attivato")
                 }
@@ -150,7 +151,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
             // --- BLOCCO MONET ---
             try {
-                if (prefs.getBoolean("enable_monet", true)) {
+                if (prefs.getBoolean("enable_monet", false)) {
                     ThemeHook(app, lpparam).hook()
                 }
             } catch (e: Exception) {
@@ -159,7 +160,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
             // --- BLOCCO ROUNDY (Il sospettato numero 1) ---
             try {
-                if (prefs.getBoolean("enable_round_ui", true)) {
+                if (prefs.getBoolean("enable_round_ui", false)) {
                     RoundyUIHook(lpparam).hook()
                 }
             } catch (e: Exception) {
@@ -331,6 +332,42 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         } catch (e: Throwable) {
             XposedBridge.log("ReVancedXposed: Failed to hook stack trace: ${e.message}")
         }
+    }
+
+    private fun bypassGmsIntegrity(lpparam: LoadPackageParam) {
+        val targetPkg = "com.spotify.music"
+        val gmsPkg = "com.google.android.gms"
+
+        // Hook per ingannare i GMS quando interrogano la firma di Spotify
+        XposedHelpers.findAndHookMethod(
+            "android.app.ApplicationPackageManager",
+            lpparam.classLoader,
+            "getPackageInfo",
+            String::class.java,
+            Int::class.javaPrimitiveType,
+            object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val pkgName = param.args[0] as? String ?: return
+                    // Se l'app che chiede è GMS e il bersaglio è Spotify, o viceversa
+                    if (pkgName == targetPkg) {
+                        val info = param.result as? PackageInfo ?: return
+                        val originalApkPath = File(lpparam.appInfo.dataDir, "cache/base.apk").absolutePath
+                        applyOriginalSignature(info, originalApkPath, param.thisObject as PackageManager)
+                    }
+                }
+            }
+        )
+        
+        // Hook Play Integrity / SafetyNet results
+        try {
+            val integrityClass = XposedHelpers.findClass("com.google.android.gms.tasks.Task", lpparam.classLoader)
+            XposedBridge.hookAllMethods(integrityClass, "addOnSuccessListener", object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    // Logga se vediamo attività di Play Integrity
+                    XposedBridge.log("ReVancedXposed: GMS Task SuccessListener intercepted")
+                }
+            })
+        } catch (ignored: Throwable) {}
     }
 
     private fun bypassAndroidIdRestriction(lpparam: LoadPackageParam) {
