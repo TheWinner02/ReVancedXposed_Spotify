@@ -75,25 +75,28 @@ fun SpotifyHook.UnlockPremium() {
     }.onFailure { Logger.printDebug { "PlayerOptionOverrides hook fallito: ${it.message}" } }
 
     // --- 5. PULIZIA CONTEXT MENU (RIMUOVI ADS) ---
-    val contextMenuViewModelClazz = ::contextMenuViewModelClass.clazz
-    XposedBridge.hookAllConstructors(contextMenuViewModelClazz, object : XC_MethodHook() {
-        val isPremiumUpsell = ::isPremiumUpsellField.field
+    runCatching {
+        val contextMenuViewModelClazz = ::contextMenuViewModelClass.clazz
+        XposedBridge.hookAllConstructors(contextMenuViewModelClazz, object : XC_MethodHook() {
+            val isPremiumUpsell = runCatching { ::isPremiumUpsellField.field }.getOrNull()
 
-        override fun beforeHookedMethod(param: MethodHookParam) {
-            val parameterTypes = (param.method as Constructor<*>).parameterTypes
-            for (i in param.args.indices) {
-                if (parameterTypes[i].name != "java.util.List") continue
-                val original = param.args[i] as? List<*> ?: continue
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                if (isPremiumUpsell == null) return
+                val parameterTypes = (param.method as Constructor<*>).parameterTypes
+                for (i in param.args.indices) {
+                    if (parameterTypes[i].name != "java.util.List") continue
+                    val original = param.args[i] as? List<*> ?: continue
 
-                // Filtriamo gli elementi che portano alla pubblicità Premium
-                val filtered = original.filter { item ->
-                    val vm = item?.callMethod("getViewModel")
-                    vm?.let { isPremiumUpsell.get(it) as? Boolean } != true
+                    // Filtriamo gli elementi che portano alla pubblicità Premium
+                    val filtered = original.filter { item ->
+                        val vm = item?.callMethod("getViewModel")
+                        vm?.let { isPremiumUpsell.get(it) as? Boolean } != true
+                    }
+                    param.args[i] = filtered
                 }
-                param.args[i] = filtered
             }
-        }
-    })
+        })
+    }.onFailure { Logger.printDebug { "ContextMenu hook fallito: ${it.message}" } }
 
     // --- 6. RIMOZIONE SEZIONI ADS (HOME & BROWSE) ---
     // Per la Home
