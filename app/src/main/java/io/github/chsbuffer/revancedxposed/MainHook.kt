@@ -36,17 +36,23 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return targetPackageName == packageName
     }
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
+        XposedBridge.log("ReVancedXposed: handleLoadPackage called for ${lpparam.packageName}")
+        
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
 
         // Carica la libreria nativa per Spotify per attivare gli hook Dobby
         if (lpparam.packageName == "com.spotify.music") {
+            XposedBridge.log("ReVancedXposed: Attempting to load native library for Spotify...")
             try {
                 System.loadLibrary("revancedxposed")
-                XposedBridge.log("Native library 'revancedxposed' loaded successfully for Spotify")
+                XposedBridge.log("ReVancedXposed: Native library 'revancedxposed' loaded successfully")
+            } catch (e: UnsatisfiedLinkError) {
+                XposedBridge.log("ReVancedXposed: Native library not found. Ensure it's included in the APK.")
             } catch (e: Throwable) {
-                XposedBridge.log("Failed to load native library 'revancedxposed': ${e.message}")
+                XposedBridge.log("ReVancedXposed: Error loading native library: ${e.message}")
+                e.printStackTrace()
             }
         }
 

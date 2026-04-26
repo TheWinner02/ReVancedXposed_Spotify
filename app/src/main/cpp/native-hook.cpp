@@ -73,16 +73,21 @@ void install_hooks() {
 
     void* libc = dlopen("libc.so", RTLD_LAZY);
     if (!libc) {
-        LOGE("Failed to open libc.so");
+        LOGE("Failed to open libc.so: %s", dlerror());
         return;
     }
 
-    DobbyHook((void*)dlsym(libc, "open"), (dobby_dummy_func_t)my_open, (dobby_dummy_func_t*)&orig_open);
-    DobbyHook((void*)dlsym(libc, "openat"), (dobby_dummy_func_t)my_openat, (dobby_dummy_func_t*)&orig_openat);
-    DobbyHook((void*)dlsym(libc, "access"), (dobby_dummy_func_t)my_access, (dobby_dummy_func_t*)&orig_access);
-    DobbyHook((void*)dlsym(libc, "fstatat"), (dobby_dummy_func_t)my_fstatat, (dobby_dummy_func_t*)&orig_fstatat);
+    void* open_addr = dlsym(libc, "open");
+    void* openat_addr = dlsym(libc, "openat");
+    void* access_addr = dlsym(libc, "access");
+    void* fstatat_addr = dlsym(libc, "fstatat");
 
-    LOGI("Native hooks installed successfully.");
+    if (open_addr) DobbyHook(open_addr, (dobby_dummy_func_t)my_open, (dobby_dummy_func_t*)&orig_open);
+    if (openat_addr) DobbyHook(openat_addr, (dobby_dummy_func_t)my_openat, (dobby_dummy_func_t*)&orig_openat);
+    if (access_addr) DobbyHook(access_addr, (dobby_dummy_func_t)my_access, (dobby_dummy_func_t*)&orig_access);
+    if (fstatat_addr) DobbyHook(fstatat_addr, (dobby_dummy_func_t)my_fstatat, (dobby_dummy_func_t*)&orig_fstatat);
+
+    LOGI("Native hooks installation attempt finished. Open addr: %p", open_addr);
 }
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
