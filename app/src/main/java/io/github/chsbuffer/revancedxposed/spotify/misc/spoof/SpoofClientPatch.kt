@@ -7,7 +7,6 @@ import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import io.github.chsbuffer.revancedxposed.Opcode
-import io.github.chsbuffer.revancedxposed.opcodes
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_CLIENT_ID
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_DEVICE_ID
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_USER_AGENT
@@ -20,14 +19,16 @@ import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import org.luckypray.dexkit.DexKitBridge
+import org.luckypray.dexkit.query.matchers.base.OpCodesMatcher
 import java.security.cert.X509Certificate
-import java.util.Calendar
+
+private var isHookingActive = false
 
 @OptIn(ExperimentalSerializationApi::class)
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val classLoader = lpparam.classLoader
     
-    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE v5.1 (Precision Source-Targeted Kill)")
+    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE v5.2 (Recursion Fix + DNA Match)")
 
     // 1. SSL PINNING BYPASS
     runCatching {
@@ -60,26 +61,29 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         })
     }
 
-    // 3. TARGETED SOURCE-BASED INTEGRITY KILL (DexKit)
+    // 3. PRECISION DNA INTEGRITY KILL (Opcode Matcher)
     runCatching { System.loadLibrary("dexkit") }
     Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
             DexKitBridge.create(apkPath).use { bridge ->
-                XposedBridge.log("SPOOF-DEBUG: Scansione DNA Sorgente...")
+                XposedBridge.log("SPOOF-DEBUG: DNA Scan in corso...")
                 
-                // Fingerprint ReVanced (DNA Opcode Sequence)
+                // Sequenza opcodes ReVanced
+                val opcodes = listOf(
+                    Opcode.CHECK_CAST.opCode,
+                    Opcode.INVOKE_VIRTUAL.opCode,
+                    Opcode.INVOKE_STATIC.opCode,
+                    Opcode.MOVE_RESULT_OBJECT.opCode,
+                    Opcode.INVOKE_VIRTUAL.opCode,
+                    Opcode.MOVE_RESULT.opCode,
+                    Opcode.IF_EQ.opCode
+                )
+                
                 bridge.findMethod {
                     matcher { 
-                        opcodes(
-                            Opcode.CHECK_CAST, 
-                            Opcode.INVOKE_VIRTUAL, 
-                            Opcode.INVOKE_STATIC, 
-                            Opcode.MOVE_RESULT_OBJECT, 
-                            Opcode.INVOKE_VIRTUAL, 
-                            Opcode.MOVE_RESULT, 
-                            Opcode.IF_EQ
-                        )
+                        returnType = "V"
+                        opCodes(OpCodesMatcher(opcodes))
                     }
                 }.forEach { mData ->
                     if (mData.descriptor.contains("com/spotify")) {
@@ -88,7 +92,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                             XposedBridge.hookMethod(method, object : XC_MethodHook() {
                                 override fun beforeHookedMethod(p: MethodHookParam) { 
                                     p.result = null 
-                                    XposedBridge.log("SPOOF-DEBUG: Source DNA Protection BYPASSED -> ${method.declaringClass.name}")
+                                    XposedBridge.log("SPOOF-DEBUG: Integrity DNA Match KILLED -> ${method.declaringClass.name}")
                                 }
                             })
                         }
@@ -111,7 +115,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                         }
                     }
                 }
-                XposedBridge.log("SPOOF-DEBUG: Scansione DNA Sorgente completata")
+                XposedBridge.log("SPOOF-DEBUG: Scansione DNA completata")
             }
         }
     }.apply { priority = Thread.MAX_PRIORITY }.start()
@@ -171,7 +175,6 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
             }
         )
 
-        // Response Interceptor per 4-Stage Debug
         XposedBridge.hookAllMethods(
             httpConnectionImpl,
             "onBytesAvailable",
@@ -192,7 +195,8 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         )
     }
 
-    // 5. Bypass "System.currentTimeMillis" per Integrity (Fuzzy Kill)
+    // 5. CALENDAR RECURSION FIX (v5.2)
+    // Usiamo valori fissi per evitare il loop infinito (StackOverflow)
     runCatching {
         XposedHelpers.findAndHookMethod(
             "java.util.Calendar",
@@ -201,9 +205,19 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
             Int::class.javaPrimitiveType,
             object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    val field = param.args[0] as Int
-                    // Se Spotify chiede l'anno (1) o l'ora (11), diamo un valore standard
-                    if (field == 1) param.result = Calendar.getInstance().get(Calendar.YEAR)
+                    if (isHookingActive) return
+                    isHookingActive = true
+                    try {
+                        val field = param.args[0] as Int
+                        // YEAR = 1, HOUR_OF_DAY = 11
+                        if (field == 1) {
+                            param.result = 2025 
+                        } else if (field == 11) {
+                            param.result = 12
+                        }
+                    } finally {
+                        isHookingActive = false
+                    }
                 }
             }
         )
