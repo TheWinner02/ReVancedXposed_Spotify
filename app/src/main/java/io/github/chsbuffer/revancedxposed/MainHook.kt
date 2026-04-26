@@ -53,7 +53,8 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             try {
                 val internalApk = prepareOriginalApk(lpparam)
                 spoofSignature(lpparam)
-                XposedBridge.log("ReVancedXposed: Signature spoofing initialized")
+                hideXposedFromStackTrace()
+                XposedBridge.log("ReVancedXposed: Stealth mechanisms initialized")
                 
                 // Carica la libreria nativa per Spotify per attivare gli hook Dobby
                 XposedBridge.log("ReVancedXposed: Attempting to load native library for Spotify...")
@@ -166,6 +167,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         }
     }
 
+    @SuppressLint("SdCardPath", "SetWorldReadable")
     private fun prepareOriginalApk(lpparam: LoadPackageParam): File? {
         val internalApk = File(lpparam.appInfo.dataDir, "cache/base.apk")
         
@@ -261,7 +263,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             val fmi = pm.getPackageArchiveInfo(originalApkPath, PackageManager.GET_SIGNATURES)
             val originalSignatures = fmi?.signatures
             
-            if (originalSignatures != null && originalSignatures.isNotEmpty()) {
+            if (!originalSignatures.isNullOrEmpty()) {
                 info.signatures = originalSignatures
                 // Update SigningInfo for Android 9+
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
@@ -278,6 +280,54 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             }
         } catch (e: Exception) {
             XposedBridge.log("ReVancedXposed: Error applying signatures: ${e.message}")
+        }
+    }
+
+    private fun hideXposedFromStackTrace() {
+        val stealthHook = object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val stackTrace = param.result as? Array<*> ?: return
+                val filteredList = mutableListOf<StackTraceElement>()
+                var modified = false
+                
+                for (element in stackTrace) {
+                    if (element is StackTraceElement) {
+                        val className = element.className.lowercase()
+                        if (className.contains("xposed") || 
+                            className.contains("lsposed") || 
+                            className.contains("revanced") ||
+                            className.contains("lspatch") ||
+                            className.contains("npatch") ||
+                            className.contains("chsbuffer")) {
+                            modified = true
+                            continue
+                        }
+                        filteredList.add(element)
+                    }
+                }
+                
+                if (modified) {
+                    param.result = filteredList.toTypedArray()
+                }
+            }
+        }
+
+        try {
+            // Hook Throwable.getStackTrace()
+            XposedHelpers.findAndHookMethod(
+                Throwable::class.java, 
+                "getStackTrace", 
+                stealthHook
+            )
+
+            // Hook Thread.getStackTrace()
+            XposedHelpers.findAndHookMethod(
+                Thread::class.java, 
+                "getStackTrace", 
+                stealthHook
+            )
+        } catch (e: Throwable) {
+            XposedBridge.log("ReVancedXposed: Failed to hook stack trace: ${e.message}")
         }
     }
 
