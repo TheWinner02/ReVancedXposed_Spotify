@@ -35,6 +35,8 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         "com.spotify.music" to { SpotifyHook(app, lpparam) },
     )
 
+    private external fun setInternalApkPath(path: String)
+
     fun shouldHook(packageName: String): Boolean {
         if (!hooksByPackage.containsKey(packageName)) return false
         if (targetPackageName == null) targetPackageName = packageName
@@ -47,27 +49,27 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
 
-        // --- SIGNATURE SPOOFING ---
         if (lpparam.packageName == "com.spotify.music") {
             try {
+                val internalApk = prepareOriginalApk(lpparam)
                 spoofSignature(lpparam)
                 XposedBridge.log("ReVancedXposed: Signature spoofing initialized")
+                
+                // Carica la libreria nativa per Spotify per attivare gli hook Dobby
+                XposedBridge.log("ReVancedXposed: Attempting to load native library for Spotify...")
+                try {
+                    System.loadLibrary("revancedxposed")
+                    if (internalApk != null) {
+                        setInternalApkPath(internalApk.absolutePath)
+                    }
+                    XposedBridge.log("ReVancedXposed: Native library 'revancedxposed' loaded successfully")
+                } catch (e: UnsatisfiedLinkError) {
+                    XposedBridge.log("ReVancedXposed: Native library not found: ${e.message}")
+                } catch (e: Throwable) {
+                    XposedBridge.log("ReVancedXposed: Error loading native library: ${e.message}")
+                }
             } catch (e: Throwable) {
-                XposedBridge.log("ReVancedXposed: Signature spoofing failed: ${e.message}")
-            }
-        }
-
-        // Carica la libreria nativa per Spotify per attivare gli hook Dobby
-        if (lpparam.packageName == "com.spotify.music") {
-            XposedBridge.log("ReVancedXposed: Attempting to load native library for Spotify...")
-            try {
-                System.loadLibrary("revancedxposed")
-                XposedBridge.log("ReVancedXposed: Native library 'revancedxposed' loaded successfully")
-            } catch (e: UnsatisfiedLinkError) {
-                XposedBridge.log("ReVancedXposed: Native library not found: ${e.message}")
-            } catch (e: Throwable) {
-                XposedBridge.log("ReVancedXposed: Error loading native library: ${e.message}")
-                e.printStackTrace()
+                XposedBridge.log("ReVancedXposed: Initialization failed: ${e.message}")
             }
         }
 
@@ -164,8 +166,30 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         }
     }
 
+    private fun prepareOriginalApk(lpparam: LoadPackageParam): File? {
+        val publicApk = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk")
+        val internalApk = File(lpparam.appInfo.dataDir, "cache/spotify_orig.apk")
+
+        if (!internalApk.exists() || (publicApk.exists() && publicApk.lastModified() > internalApk.lastModified())) {
+            if (publicApk.exists()) {
+                XposedBridge.log("ReVancedXposed: Copying original APK from Download to internal cache...")
+                try {
+                    internalApk.parentFile?.mkdirs()
+                    publicApk.copyTo(internalApk, overwrite = true)
+                    internalApk.setReadable(true, false)
+                    XposedBridge.log("ReVancedXposed: APK copied successfully to ${internalApk.absolutePath}")
+                } catch (e: Exception) {
+                    XposedBridge.log("ReVancedXposed: Failed to copy APK: ${e.message}")
+                }
+            } else {
+                XposedBridge.log("ReVancedXposed: Original APK not found in Download. Please place base.apk in Download folder.")
+            }
+        }
+        return if (internalApk.exists()) internalApk else null
+    }
+
     private fun spoofSignature(lpparam: LoadPackageParam) {
-        val originalApkPath = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk").absolutePath
+        val originalApkPath = File(lpparam.appInfo.dataDir, "cache/spotify_orig.apk").absolutePath
         val targetPkg = "com.spotify.music"
 
         // 1. Hook PackageManager (Legacy and Modern)

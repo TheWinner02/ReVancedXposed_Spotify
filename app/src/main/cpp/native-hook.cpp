@@ -11,12 +11,12 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// Placeholder for the original APK path
-static const char* original_apk_path = "/sdcard/Download/base.apk";
+// Global to store the internal APK path
+static char internal_apk_path[512] = "";
 
 // Function to check if the path is the Spotify base.apk
 bool is_spotify_apk(const char* pathname) {
-    if (pathname == nullptr) return false;
+    if (pathname == nullptr || strlen(internal_apk_path) == 0) return false;
     return (strstr(pathname, "com.spotify.music") != nullptr) && (strstr(pathname, "base.apk") != nullptr);
 }
 
@@ -35,8 +35,8 @@ static fstatat_t orig_fstatat = nullptr;
 // Hook for open
 int my_open(const char* pathname, int flags, mode_t mode) {
     if (is_spotify_apk(pathname)) {
-        LOGI("Redirecting open: %s -> %s", pathname, original_apk_path);
-        return orig_open(original_apk_path, flags, mode);
+        LOGI("Redirecting open: %s -> %s", pathname, internal_apk_path);
+        return orig_open(internal_apk_path, flags, mode);
     }
     return orig_open(pathname, flags, mode);
 }
@@ -44,8 +44,8 @@ int my_open(const char* pathname, int flags, mode_t mode) {
 // Hook for openat
 int my_openat(int dirfd, const char* pathname, int flags, mode_t mode) {
     if (is_spotify_apk(pathname)) {
-        LOGI("Redirecting openat: %s -> %s", pathname, original_apk_path);
-        return orig_openat(dirfd, original_apk_path, flags, mode);
+        LOGI("Redirecting openat: %s -> %s", pathname, internal_apk_path);
+        return orig_openat(dirfd, internal_apk_path, flags, mode);
     }
     return orig_openat(dirfd, pathname, flags, mode);
 }
@@ -53,8 +53,8 @@ int my_openat(int dirfd, const char* pathname, int flags, mode_t mode) {
 // Hook for access
 int my_access(const char* pathname, int mode) {
     if (is_spotify_apk(pathname)) {
-        LOGI("Redirecting access: %s -> %s", pathname, original_apk_path);
-        return orig_access(original_apk_path, mode);
+        LOGI("Redirecting access: %s -> %s", pathname, internal_apk_path);
+        return orig_access(internal_apk_path, mode);
     }
     return orig_access(pathname, mode);
 }
@@ -62,10 +62,20 @@ int my_access(const char* pathname, int mode) {
 // Hook for fstatat
 int my_fstatat(int dirfd, const char* pathname, struct stat* buf, int flags) {
     if (is_spotify_apk(pathname)) {
-        LOGI("Redirecting fstatat: %s -> %s", pathname, original_apk_path);
-        return orig_fstatat(dirfd, original_apk_path, buf, flags);
+        LOGI("Redirecting fstatat: %s -> %s", pathname, internal_apk_path);
+        return orig_fstatat(dirfd, internal_apk_path, buf, flags);
     }
     return orig_fstatat(dirfd, pathname, buf, flags);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_github_chsbuffer_revancedxposed_MainHook_setInternalApkPath(JNIEnv* env, jobject thiz, jstring path) {
+    const char* native_path = env->GetStringUTFChars(path, nullptr);
+    if (native_path != nullptr) {
+        strncpy(internal_apk_path, native_path, sizeof(internal_apk_path) - 1);
+        internal_apk_path[sizeof(internal_apk_path) - 1] = '\0';
+        LOGI("Native path updated: %s", internal_apk_path);
+        env->ReleaseStringUTFChars(path, native_path);
+    }
 }
 
 void install_hooks() {
