@@ -7,6 +7,7 @@ import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import io.github.chsbuffer.revancedxposed.Opcode
+import io.github.chsbuffer.revancedxposed.opcodes
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_CLIENT_ID
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_DEVICE_ID
 import io.github.chsbuffer.revancedxposed.spotify.misc.spoof.SpoofFingerprints.MASTER_USER_AGENT
@@ -19,16 +20,16 @@ import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlinx.serialization.protobuf.ProtoBuf
 import org.luckypray.dexkit.DexKitBridge
-import org.luckypray.dexkit.query.matchers.base.OpCodesMatcher
 import java.security.cert.X509Certificate
+import java.util.Calendar
 
 @OptIn(ExperimentalSerializationApi::class)
 fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
     val classLoader = lpparam.classLoader
     
-    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE v5.0 (DNA Integrity Kill)")
+    XposedBridge.log("SPOOF-DEBUG: Avvio Modalità iOS-ZOMBIE v5.1 (Precision Source-Targeted Kill)")
 
-    // 1. SSL PINNING BYPASS (Protezione contro Schermata Nera)
+    // 1. SSL PINNING BYPASS
     runCatching {
         val trustManagerClass = XposedHelpers.findClass("com.android.org.conscrypt.TrustManagerImpl", classLoader)
         XposedHelpers.findAndHookMethod(
@@ -43,7 +44,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         )
     }
 
-    // 2. Signature Spoof (Sempre necessario per caricamento lib)
+    // 2. Signature Spoof
     runCatching {
         val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", classLoader)
         XposedBridge.hookAllMethods(pmClass, "getPackageInfo", object : XC_MethodHook() {
@@ -59,29 +60,26 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
         })
     }
 
-    // 3. PRECISION DNA INTEGRITY KILL (Opcode Matcher)
+    // 3. TARGETED SOURCE-BASED INTEGRITY KILL (DexKit)
     runCatching { System.loadLibrary("dexkit") }
     Thread {
         runCatching {
             val apkPath = lpparam.appInfo.sourceDir ?: return@Thread
             DexKitBridge.create(apkPath).use { bridge ->
-                XposedBridge.log("SPOOF-DEBUG: Scansione DNA avviata...")
+                XposedBridge.log("SPOOF-DEBUG: Scansione DNA Sorgente...")
                 
-                // Fingerprint ReVanced: CHECK_CAST, INVOKE_VIRTUAL, INVOKE_STATIC, MOVE_RESULT_OBJECT, INVOKE_VIRTUAL, MOVE_RESULT, IF_EQ
-                val opcodes = listOf(
-                    Opcode.CHECK_CAST.opCode,
-                    Opcode.INVOKE_VIRTUAL.opCode,
-                    Opcode.INVOKE_STATIC.opCode,
-                    Opcode.MOVE_RESULT_OBJECT.opCode,
-                    Opcode.INVOKE_VIRTUAL.opCode,
-                    Opcode.MOVE_RESULT.opCode,
-                    Opcode.IF_EQ.opCode
-                )
-                
+                // Fingerprint ReVanced (DNA Opcode Sequence)
                 bridge.findMethod {
                     matcher { 
-                        returnType = "V"
-                        opCodes(OpCodesMatcher(opcodes))
+                        opcodes(
+                            Opcode.CHECK_CAST, 
+                            Opcode.INVOKE_VIRTUAL, 
+                            Opcode.INVOKE_STATIC, 
+                            Opcode.MOVE_RESULT_OBJECT, 
+                            Opcode.INVOKE_VIRTUAL, 
+                            Opcode.MOVE_RESULT, 
+                            Opcode.IF_EQ
+                        )
                     }
                 }.forEach { mData ->
                     if (mData.descriptor.contains("com/spotify")) {
@@ -90,7 +88,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                             XposedBridge.hookMethod(method, object : XC_MethodHook() {
                                 override fun beforeHookedMethod(p: MethodHookParam) { 
                                     p.result = null 
-                                    XposedBridge.log("SPOOF-DEBUG: Integrity DNA Match KILLED -> ${method.declaringClass.name}")
+                                    XposedBridge.log("SPOOF-DEBUG: Source DNA Protection BYPASSED -> ${method.declaringClass.name}")
                                 }
                             })
                         }
@@ -113,12 +111,12 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                         }
                     }
                 }
-                XposedBridge.log("SPOOF-DEBUG: Scansione DNA completata")
+                XposedBridge.log("SPOOF-DEBUG: Scansione DNA Sorgente completata")
             }
         }
     }.apply { priority = Thread.MAX_PRIORITY }.start()
 
-    // 4. Hook NativeHttpConnection (Direct RAM Transformation)
+    // 4. Hook NativeHttpConnection (RAM Transform)
     runCatching {
         val cl = classLoader
         val httpConnectionImpl = cl.loadClass("com.spotify.core.http.NativeHttpConnection")
@@ -173,7 +171,7 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
             }
         )
 
-        // Intercettiamo il RITORNO per debug a 4 stadi
+        // Response Interceptor per 4-Stage Debug
         XposedBridge.hookAllMethods(
             httpConnectionImpl,
             "onBytesAvailable",
@@ -189,6 +187,23 @@ fun SpoofClient(lpparam: XC_LoadPackage.LoadPackageParam) {
                             XposedBridge.log("SPOOF-DEBUG: RITORNO RAM -> TOKEN ottenuto! Scadenza: ${expires}s")
                         }
                     }
+                }
+            }
+        )
+    }
+
+    // 5. Bypass "System.currentTimeMillis" per Integrity (Fuzzy Kill)
+    runCatching {
+        XposedHelpers.findAndHookMethod(
+            "java.util.Calendar",
+            classLoader,
+            "get",
+            Int::class.javaPrimitiveType,
+            object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val field = param.args[0] as Int
+                    // Se Spotify chiede l'anno (1) o l'ora (11), diamo un valore standard
+                    if (field == 1) param.result = Calendar.getInstance().get(Calendar.YEAR)
                 }
             }
         )
