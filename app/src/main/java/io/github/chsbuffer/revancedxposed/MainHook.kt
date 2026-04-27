@@ -257,6 +257,9 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         fun nativeBootstrap(context: Context) {
             // This is called by libghost.so after fileless memory injection
             XposedBridge.log("Chimera: Static Native Bootstrap triggered")
+            
+            // Critical: Ensure Xposed helpers can find the payload classes
+            // We are already inside the InMemoryDexClassLoader execution context
             ChimeraEngine.bootstrap(context)
         }
     }

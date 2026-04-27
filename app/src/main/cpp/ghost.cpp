@@ -34,7 +34,6 @@ void load_original_lib() {
 void load_java_payload(JNIEnv* env, jobject context) {
     LOGI("Chimera: Starting fileless Java payload loading...");
 
-    // 1. Get AssetManager from context
     jclass contextClass = env->GetObjectClass(context);
     jmethodID getAssetsMethod = env->GetMethodID(contextClass, "getAssets", "()Landroid/content/res/AssetManager;");
     jobject assetManagerObj = env->CallObjectMethod(context, getAssetsMethod);
@@ -45,7 +44,6 @@ void load_java_payload(JNIEnv* env, jobject context) {
         return;
     }
 
-    // 2. Read payload from assets
     AAsset* asset = AAssetManager_open(assetManager, PAYLOAD_ASSET_NAME, AASSET_MODE_BUFFER);
     if (!asset) {
         LOGE("Chimera: Payload asset '%s' not found.", PAYLOAD_ASSET_NAME);
@@ -56,30 +54,37 @@ void load_java_payload(JNIEnv* env, jobject context) {
     const void* buffer = AAsset_getBuffer(asset);
     LOGI("Chimera: Payload loaded in memory (%ld bytes).", size);
 
-    // 3. Create InMemoryDexClassLoader (Android 8.0+)
+    // Create Direct ByteBuffer
     jclass byteBufferClass = env->FindClass("java/nio/ByteBuffer");
     jmethodID allocateDirectMethod = env->GetStaticMethodID(byteBufferClass, "allocateDirect", "(I)Ljava/nio/ByteBuffer;");
     jobject byteBuffer = env->CallStaticObjectMethod(byteBufferClass, allocateDirectMethod, (jint)size);
-
     void* directBuffer = env->GetDirectBufferAddress(byteBuffer);
     memcpy(directBuffer, buffer, (size_t)size);
     AAsset_close(asset);
 
-    jclass classLoaderClass = env->FindClass("dalvik/system/InMemoryDexClassLoader");
-    jmethodID classLoaderCtor = env->GetMethodID(classLoaderClass, "<init>", "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
-
+    // Get System or Spotify ClassLoader as parent
     jmethodID getClassLoaderMethod = env->GetMethodID(contextClass, "getClassLoader", "()Ljava/lang/ClassLoader;");
     jobject parentClassLoader = env->CallObjectMethod(context, getClassLoaderMethod);
 
+    // Create InMemoryDexClassLoader
+    jclass classLoaderClass = env->FindClass("dalvik/system/InMemoryDexClassLoader");
+    jmethodID classLoaderCtor = env->GetMethodID(classLoaderClass, "<init>", "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
     jobject inMemoryClassLoader = env->NewObject(classLoaderClass, classLoaderCtor, byteBuffer, parentClassLoader);
 
     if (inMemoryClassLoader) {
         LOGI("Chimera: InMemoryDexClassLoader created successfully.");
 
-        // 4. Bootstrap the module
+        // Find MainHook class
         jmethodID loadClassMethod = env->GetMethodID(classLoaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
         jstring mainClassName = env->NewStringUTF(MAIN_HOOK_CLASS);
         jclass mainClass = (jclass)env->CallObjectMethod(inMemoryClassLoader, loadClassMethod, mainClassName);
+
+        if (env->ExceptionCheck()) {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+            LOGE("Chimera: ClassNotFoundException for MainHook.");
+            return;
+        }
 
         if (mainClass) {
             jmethodID bootstrapMethod = env->GetStaticMethodID(mainClass, "nativeBootstrap", "(Landroid/content/Context;)V");
@@ -89,8 +94,6 @@ void load_java_payload(JNIEnv* env, jobject context) {
             } else {
                 LOGE("Chimera: Failed to find nativeBootstrap method.");
             }
-        } else {
-            LOGE("Chimera: Failed to find MainHook class in payload.");
         }
     } else {
         LOGE("Chimera: Failed to create InMemoryDexClassLoader.");
@@ -104,13 +107,8 @@ extern "C" JNIEXPORT void JNICALL Java_com_spotify_music_SpotifyApplication_init
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     LOGI("Chimera: Micro-Loader starting...");
-
-    // Phase 1: Native Shim
     load_original_lib();
-
-    // Phase 2: Dobby Syscall Virtualization
     install_syscall_hooks();
-
     LOGI("Chimera: Initialization completed.");
     return JNI_VERSION_1_6;
 }
