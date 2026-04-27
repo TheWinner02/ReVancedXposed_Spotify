@@ -16,8 +16,7 @@
 
 #define ORIGINAL_LIB_NAME "libcrashlytics_orig.so"
 #define PAYLOAD_ASSET_NAME "settings.bin"
-// Per il ClassLoader Java servono i punti, non gli slash!
-#define BOOTSTRAP_CLASS_DOT "io.github.chsbuffer.revancedxposed.MainHook"
+#define BOOTSTRAP_CLASS "io.github.chsbuffer.revancedxposed.MainHook"
 
 // External declarations
 void install_syscall_hooks();
@@ -33,7 +32,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_google_firebase_crashlytics_ndk_J
 }
 
 void load_java_payload(JNIEnv* env, jobject context) {
-    LOGI("Chimera: Payload injection sequence started.");
+    LOGI("Chimera: Payload injection started.");
 
     jclass contextClass = env->GetObjectClass(context);
     jmethodID getAssetsMethod = env->GetMethodID(contextClass, "getAssets", "()Landroid/content/res/AssetManager;");
@@ -42,13 +41,14 @@ void load_java_payload(JNIEnv* env, jobject context) {
 
     AAsset* asset = AAssetManager_open(assetManager, PAYLOAD_ASSET_NAME, AASSET_MODE_BUFFER);
     if (!asset) {
-        LOGE("Chimera: Payload asset '%s' not found.", PAYLOAD_ASSET_NAME);
+        LOGE("Chimera: Asset missing: %s", PAYLOAD_ASSET_NAME);
         return;
     }
 
     off_t size = AAsset_getLength(asset);
     const void* buffer = AAsset_getBuffer(asset);
 
+    // Allocate Direct ByteBuffer for raw DEX loading
     jclass byteBufferClass = env->FindClass("java/nio/ByteBuffer");
     jmethodID allocateDirectMethod = env->GetStaticMethodID(byteBufferClass, "allocateDirect", "(I)Ljava/nio/ByteBuffer;");
     jobject byteBuffer = env->CallStaticObjectMethod(byteBufferClass, allocateDirectMethod, (jint)size);
@@ -56,25 +56,27 @@ void load_java_payload(JNIEnv* env, jobject context) {
     memcpy(directBuffer, buffer, (size_t)size);
     AAsset_close(asset);
 
+    // Get Parent ClassLoader (Spotify)
     jmethodID getClassLoaderMethod = env->GetMethodID(contextClass, "getClassLoader", "()Ljava/lang/ClassLoader;");
     jobject parentClassLoader = env->CallObjectMethod(context, getClassLoaderMethod);
 
+    // Create InMemoryDexClassLoader (Supports Raw DEX Bytecode)
     jclass classLoaderClass = env->FindClass("dalvik/system/InMemoryDexClassLoader");
     jmethodID classLoaderCtor = env->GetMethodID(classLoaderClass, "<init>", "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
     jobject inMemoryClassLoader = env->NewObject(classLoaderClass, classLoaderCtor, byteBuffer, parentClassLoader);
 
     if (inMemoryClassLoader) {
-        LOGI("Chimera: ClassLoader ready.");
+        LOGI("Chimera: Memory ClassLoader initialized.");
 
-        // Find Bootstrap Class using DOT notation
+        // Discovery attempt
         jmethodID loadClassMethod = env->GetMethodID(classLoaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
-        jstring mainClassName = env->NewStringUTF(BOOTSTRAP_CLASS_DOT);
+        jstring mainClassName = env->NewStringUTF(BOOTSTRAP_CLASS);
+
         jclass mainClass = (jclass)env->CallObjectMethod(inMemoryClassLoader, loadClassMethod, mainClassName);
 
         if (env->ExceptionCheck()) {
-            env->ExceptionDescribe();
             env->ExceptionClear();
-            LOGE("Chimera: Failed to resolve class %s", BOOTSTRAP_CLASS_DOT);
+            LOGE("Chimera: MainHook resolution failed. Verify if settings.bin is a valid RAW DEX file.");
             return;
         }
 
@@ -83,15 +85,13 @@ void load_java_payload(JNIEnv* env, jobject context) {
             if (bootstrapMethod) {
                 env->CallStaticVoidMethod(mainClass, bootstrapMethod, context);
                 LOGI("Chimera: [ SYSTEM ONLINE ]");
-            } else {
-                LOGE("Chimera: nativeBootstrap method not found.");
             }
         }
     }
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_spotify_music_SpotifyApplication_initGhost(JNIEnv* env, jclass clazz, jobject context) {
-    LOGI("Chimera: initGhost called.");
+    LOGI("Chimera: initGhost sequence.");
     dlopen(ORIGINAL_LIB_NAME, RTLD_NOW | RTLD_GLOBAL);
     load_java_payload(env, context);
 }
