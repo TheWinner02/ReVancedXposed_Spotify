@@ -21,11 +21,7 @@
 // External declarations
 void install_syscall_hooks();
 
-// Helper to load the original library via Java's System.load
-// This ensures JNI methods are properly registered in the JVM
 void load_original_lib_properly(JNIEnv* env, jobject context) {
-    LOGI("Chimera: Resolving original library path...");
-
     jclass contextClass = env->GetObjectClass(context);
     jmethodID getAppInfoMethod = env->GetMethodID(contextClass, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;");
     jobject appInfo = env->CallObjectMethod(context, getAppInfoMethod);
@@ -38,35 +34,26 @@ void load_original_lib_properly(JNIEnv* env, jobject context) {
     std::string fullPath = std::string(dirChars) + "/" + ORIGINAL_LIB_NAME;
     env->ReleaseStringUTFChars(nativeLibDir, dirChars);
 
-    LOGI("Chimera: Loading original library via System.load: %s", fullPath.c_str());
-
     jclass systemClass = env->FindClass("java/lang/System");
     jmethodID loadMethod = env->GetStaticMethodID(systemClass, "load", "(Ljava/lang/String;)V");
     jstring jPath = env->NewStringUTF(fullPath.c_str());
-
     env->CallStaticVoidMethod(systemClass, loadMethod, jPath);
 
     if (env->ExceptionCheck()) {
-        env->ExceptionDescribe();
         env->ExceptionClear();
-        LOGE("Chimera: Failed to load original library via System.load. Stability may be compromised.");
+        LOGE("Chimera: Critical failure loading %s", ORIGINAL_LIB_NAME);
     } else {
-        LOGI("Chimera: Original library linked successfully to JVM.");
+        LOGI("Chimera: Original library linked.");
     }
 }
 
 void load_java_payload(JNIEnv* env, jobject context) {
-    LOGI("Chimera: Starting fileless Java payload loading...");
+    LOGI("Chimera: Payload injection sequence started.");
 
     jclass contextClass = env->GetObjectClass(context);
     jmethodID getAssetsMethod = env->GetMethodID(contextClass, "getAssets", "()Landroid/content/res/AssetManager;");
     jobject assetManagerObj = env->CallObjectMethod(context, getAssetsMethod);
     AAssetManager* assetManager = AAssetManager_fromJava(env, assetManagerObj);
-
-    if (!assetManager) {
-        LOGE("Chimera: Failed to get AssetManager.");
-        return;
-    }
 
     AAsset* asset = AAssetManager_open(assetManager, PAYLOAD_ASSET_NAME, AASSET_MODE_BUFFER);
     if (!asset) {
@@ -76,7 +63,7 @@ void load_java_payload(JNIEnv* env, jobject context) {
 
     off_t size = AAsset_getLength(asset);
     const void* buffer = AAsset_getBuffer(asset);
-    LOGI("Chimera: Payload loaded in memory (%ld bytes).", size);
+    LOGI("Chimera: Payload size: %ld bytes.", size);
 
     // Create Direct ByteBuffer
     jclass byteBufferClass = env->FindClass("java/nio/ByteBuffer");
@@ -86,22 +73,33 @@ void load_java_payload(JNIEnv* env, jobject context) {
     memcpy(directBuffer, buffer, (size_t)size);
     AAsset_close(asset);
 
+    // Get Parent ClassLoader
     jmethodID getClassLoaderMethod = env->GetMethodID(contextClass, "getClassLoader", "()Ljava/lang/ClassLoader;");
-    jobject spotifyClassLoader = env->CallObjectMethod(context, getClassLoaderMethod);
+    jobject parentClassLoader = env->CallObjectMethod(context, getClassLoaderMethod);
 
+    // Create InMemoryDexClassLoader
     jclass classLoaderClass = env->FindClass("dalvik/system/InMemoryDexClassLoader");
     jmethodID classLoaderCtor = env->GetMethodID(classLoaderClass, "<init>", "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
-    jobject inMemoryClassLoader = env->NewObject(classLoaderClass, classLoaderCtor, byteBuffer, spotifyClassLoader);
+    jobject inMemoryClassLoader = env->NewObject(classLoaderClass, classLoaderCtor, byteBuffer, parentClassLoader);
 
     if (inMemoryClassLoader) {
-        LOGI("Chimera: InMemoryDexClassLoader created successfully.");
+        LOGI("Chimera: Memory ClassLoader ready.");
+
+        // Use Thread.currentThread().setContextClassLoader to help finding the class
+        jclass threadClass = env->FindClass("java/lang/Thread");
+        jmethodID currentThreadMethod = env->GetStaticMethodID(threadClass, "currentThread", "()Ljava/lang/Thread;");
+        jobject currentThread = env->CallStaticObjectMethod(threadClass, currentThreadMethod);
+        jmethodID setContextClassLoaderMethod = env->GetMethodID(threadClass, "setContextClassLoader", "(Ljava/lang/ClassLoader;)V");
+        env->CallVoidMethod(currentThread, setContextClassLoaderMethod, inMemoryClassLoader);
+
+        // Try to load MainHook
         jmethodID loadClassMethod = env->GetMethodID(classLoaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
         jstring mainClassName = env->NewStringUTF(MAIN_HOOK_CLASS);
         jclass mainClass = (jclass)env->CallObjectMethod(inMemoryClassLoader, loadClassMethod, mainClassName);
 
         if (env->ExceptionCheck()) {
             env->ExceptionClear();
-            LOGE("Chimera: MainHook class not found in memory.");
+            LOGE("Chimera: MainHook class discovery failed.");
             return;
         }
 
@@ -109,30 +107,19 @@ void load_java_payload(JNIEnv* env, jobject context) {
             jmethodID bootstrapMethod = env->GetStaticMethodID(mainClass, "nativeBootstrap", "(Landroid/content/Context;)V");
             if (bootstrapMethod) {
                 env->CallStaticVoidMethod(mainClass, bootstrapMethod, context);
-                LOGI("Chimera: Java Payload bootstrapped successfully.");
+                LOGI("Chimera: SYSTEM ONLINE.");
             }
         }
-    } else {
-        LOGE("Chimera: Failed to create InMemoryDexClassLoader.");
     }
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_spotify_music_SpotifyApplication_initGhost(JNIEnv* env, jclass clazz, jobject context) {
-    LOGI("Chimera: initGhost triggered.");
-
-    // 1. First, load the original library properly so Firebase doesn't crash
+    LOGI("Chimera: initGhost called.");
     load_original_lib_properly(env, context);
-
-    // 2. Then, load our mod payload into RAM
     load_java_payload(env, context);
 }
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
-    LOGI("Chimera: Micro-Loader starting...");
-
-    // Initialize syscall hooks immediately (Dobby)
     install_syscall_hooks();
-
-    LOGI("Chimera: Native initialization completed.");
     return JNI_VERSION_1_6;
 }
