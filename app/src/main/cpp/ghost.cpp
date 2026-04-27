@@ -97,8 +97,8 @@ void load_java_payload(JNIEnv* env, jobject context) {
     }
 }
 
-extern "C" JNIEXPORT void JNICALL Java_io_github_chsbuffer_revancedxposed_MainHook_initChimera(JNIEnv* env, jclass clazz, jobject context) {
-    LOGI("Chimera: initChimera called from Java.");
+extern "C" JNIEXPORT void JNICALL Java_com_spotify_music_SpotifyApplication_initGhost(JNIEnv* env, jclass clazz, jobject context) {
+    LOGI("Chimera: initGhost called from SpotifyApplication.");
     load_java_payload(env, context);
 }
 

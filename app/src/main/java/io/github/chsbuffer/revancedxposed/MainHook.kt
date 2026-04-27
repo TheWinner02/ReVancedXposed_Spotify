@@ -1,7 +1,6 @@
 package io.github.chsbuffer.revancedxposed
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.view.View
@@ -255,12 +254,9 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
     companion object {
         @JvmStatic
-        private external fun initChimera(context: Context)
-
-        @JvmStatic
         fun nativeBootstrap(context: Context) {
+            // This is called by libghost.so after fileless memory injection
             XposedBridge.log("Chimera: Static Native Bootstrap triggered")
-            runCatching { initChimera(context) }
             ChimeraEngine.bootstrap(context)
         }
     }
