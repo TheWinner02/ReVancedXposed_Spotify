@@ -21,7 +21,7 @@ bool is_spotify_apk(const char* pathname) {
     // Controlla se il percorso contiene "com.spotify.music" (copre cloni e originale)
     // e se finisce con ".apk" (solitamente base.apk o split_*.apk)
     const char* is_spotify = strstr(pathname, "com.spotify.music");
-    const char* is_apk = strstr(pathname, ".apk");
+    const char* is_apk = strstr(pathname, "base.apk");
 
     // Se stiamo cercando di leggere un APK di Spotify, ma il percorso NON è quello
     // dell'APK "pulito" che abbiamo impostato, allora dobbiamo dirottare la lettura.

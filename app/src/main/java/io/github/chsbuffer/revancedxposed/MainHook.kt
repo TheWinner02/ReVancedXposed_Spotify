@@ -236,6 +236,24 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             } catch (e: Exception) {
                 XposedBridge.log("ReVancedXposed ERROR in Discovery Step 2: ${e.message}")
             }
+
+            // 1c. Tentativo "Brute Force" (Percorsi standard Android)
+            try {
+                XposedBridge.log("ReVancedXposed: Discovery Step 3: Trying brute-force paths...")
+                val appDir = File("/data/app")
+                if (appDir.exists() && appDir.isDirectory) {
+                    val spotifyFolders = appDir.listFiles { file -> file.name.contains(stockPkg) }
+                    spotifyFolders?.forEach { folder ->
+                        val apk = File(folder, "base.apk")
+                        if (apk.exists()) {
+                            XposedBridge.log("ReVancedXposed SUCCESS: Stock APK found via brute-force at ${apk.absolutePath}")
+                            return apk
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                XposedBridge.log("ReVancedXposed ERROR in Discovery Step 3: ${e.message}")
+            }
         }
         
         // 2. Fallback su percorsi pubblici
