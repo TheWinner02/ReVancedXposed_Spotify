@@ -240,19 +240,41 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             // 1c. Tentativo "Brute Force" (Percorsi standard Android)
             try {
                 XposedBridge.log("ReVancedXposed: Discovery Step 3: Trying brute-force paths...")
+                
+                // Cerchiamo in /data/app che contiene le cartelle con nomi randomici ~~ID==
                 val appDir = File("/data/app")
                 if (appDir.exists() && appDir.isDirectory) {
-                    val spotifyFolders = appDir.listFiles { file -> file.name.contains(stockPkg) }
-                    spotifyFolders?.forEach { folder ->
-                        val apk = File(folder, "base.apk")
-                        if (apk.exists()) {
-                            XposedBridge.log("ReVancedXposed SUCCESS: Stock APK found via brute-force at ${apk.absolutePath}")
-                            return apk
+                    // In Android 11+ le cartelle sono strutturate come /data/app/~~random/pkg-random/base.apk
+                    appDir.walkTopDown().maxDepth(3).forEach { file ->
+                        if (file.name.contains(stockPkg) && file.isDirectory) {
+                            val apk = File(file, "base.apk")
+                            if (apk.exists()) {
+                                XposedBridge.log("ReVancedXposed SUCCESS: Stock APK found via recursive brute-force at ${apk.absolutePath}")
+                                return apk
+                            }
+                        }
+                    }
+                }
+
+                // Backup estremo: Percorso tipico se conosciamo la struttura
+                XposedBridge.log("ReVancedXposed: Discovery Step 4: Final attempt via known patterns...")
+                val fixedRoot = "/data/app"
+                val rootFiles = File(fixedRoot).listFiles()
+                rootFiles?.forEach { level1 ->
+                    if (level1.name.startsWith("~~")) {
+                        level1.listFiles()?.forEach { level2 ->
+                            if (level2.name.contains(stockPkg)) {
+                                val apk = File(level2, "base.apk")
+                                if (apk.exists()) {
+                                    XposedBridge.log("ReVancedXposed SUCCESS: Stock APK found via pattern search at ${apk.absolutePath}")
+                                    return apk
+                                }
+                            }
                         }
                     }
                 }
             } catch (e: Exception) {
-                XposedBridge.log("ReVancedXposed ERROR in Discovery Step 3: ${e.message}")
+                XposedBridge.log("ReVancedXposed ERROR in Discovery Step 3/4: ${e.message}")
             }
         }
         
