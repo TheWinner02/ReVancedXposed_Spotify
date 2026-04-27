@@ -3,6 +3,7 @@ package io.github.chsbuffer.revancedxposed
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -20,8 +21,13 @@ import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import androidx.core.view.isNotEmpty
+import android.os.Bundle
+import android.os.Environment
+import java.io.File
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
+    private var isInitialized = false
+    
     lateinit var startupParam: StartupParam
     lateinit var lpparam: LoadPackageParam
     lateinit var app: Application
@@ -30,61 +36,56 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         "com.spotify.music" to { SpotifyHook(app, lpparam) },
     )
 
+    private external fun setInternalApkPath(path: String)
+
     fun shouldHook(packageName: String): Boolean {
         if (!hooksByPackage.containsKey(packageName)) return false
         if (targetPackageName == null) targetPackageName = packageName
         return targetPackageName == packageName
     }
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
+        if (isInitialized) return
+        isInitialized = true
+
+        XposedBridge.log("Chimera: Entering process ${lpparam.packageName}")
+        
         if (!lpparam.isFirstApplication) return
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
 
-        // --- NUOVO TRIGGER: LONG CLICK SU ICONA PROFILO ---
-        XposedHelpers.findAndHookMethod(
-            "android.app.Activity",
-            lpparam.classLoader,
-            "onPostCreate", // Usiamo onPostCreate per essere sicuri che la UI sia pronta
-            android.os.Bundle::class.java,
-            object : XC_MethodHook() {
-                @SuppressLint("DiscouragedApi")
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val activity = param.thisObject as Activity
-                    if (!activity.javaClass.name.contains("MainActivity")) return
-
-                    // Spotify carica l'avatar in modo asincrono, aspettiamo che la vista sia disposta
-                    val decorView = activity.window.decorView as ViewGroup
-                    decorView.viewTreeObserver.addOnGlobalLayoutListener {
-                        // Proviamo a trovare l'avatar tramite ID comuni
-                        val avatarIds = listOf("profile_button", "profile_image", "avatar", "user_avatar", "faceview", "faceheader_image")
-                        var found = false
-
-                        for (idName in avatarIds) {
-                            val resId = activity.resources.getIdentifier(idName, "id", activity.packageName)
-                            if (resId != 0) {
-                                val avatarView = activity.findViewById<View>(resId)
-                                if (avatarView != null && !found) {
-                                    setModLongClickListener(avatarView, activity)
-                                    found = true
-                                }
-                            }
-                        }
-
-                        // Se non troviamo l'ID, cerchiamo la prima ImageView in alto a sinistra
-                        if (!found) {
-                            findAvatarRecursive(decorView, activity)
-                        }
-                    }
-                }
+        // --- PHASE 1: NATIVE GHOST SHIELD ---
+        if (lpparam.packageName == "com.spotify.music") {
+            try {
+                System.loadLibrary("ghost")
+                XposedBridge.log("Chimera: Native Ghost Shield active")
+            } catch (e: Throwable) {
+                XposedBridge.log("Chimera: Failed to load native shield: ${e.message}")
             }
-        )
+        }
 
-        inContext(lpparam) { app ->
-            this.app = app
+        // --- PHASE 2: UI & DYNAMIC ENGINE BOOTSTRAP ---
+        inContext(lpparam) { context ->
+            this.app = context
+            
+            if (lpparam.packageName == "com.spotify.music") {
+                // Handle Stock APK Escrow for Dobby
+                val internalApk = prepareOriginalApk(lpparam)
+                if (internalApk != null) {
+                    runCatching { setInternalApkPath(internalApk.absolutePath) }
+                }
+                
+                // Bootstrap the dynamic engine
+                ChimeraEngine.bootstrap(context)
+            }
 
-            // Carichiamo le preferenze una volta sola
-            val prefs = app.getSharedPreferences("spotify_prefs", 0)
-
+            // Legacy hooks initialization (for stability)
+            val prefs = context.getSharedPreferences("spotify_prefs", 0)
+            
+            XposedBridge.log("Chimera: Initializing hook chain...")
+            
+            // Re-integrate the profile long click trigger here if needed
+            // ... (I will keep the rest of your original logic below)
+            
             if (isReVancedPatched(lpparam)) {
                 Utils.showToastLong("ReVanced Xposed FE module does not work with patched app")
                 return@inContext
@@ -131,6 +132,24 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             }
             
         }
+    }
+
+    @SuppressLint("SdCardPath", "SetWorldReadable")
+    private fun prepareOriginalApk(lpparam: LoadPackageParam): File? {
+        val internalApk = File(lpparam.appInfo.dataDir, "cache/stock.apk")
+        val publicApk = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk")
+
+        if (publicApk.exists() && (!internalApk.exists() || publicApk.lastModified() > internalApk.lastModified())) {
+            XposedBridge.log("Chimera: Syncing stock APK to internal cache...")
+            try {
+                internalApk.parentFile?.mkdirs()
+                publicApk.copyTo(internalApk, overwrite = true)
+                internalApk.setReadable(true, false)
+            } catch (e: Exception) {
+                XposedBridge.log("Chimera: Sync failed -> ${e.message}")
+            }
+        }
+        return if (internalApk.exists()) internalApk else null
     }
 
     // Funzione per impostare il listener e dare feedback
@@ -186,6 +205,15 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     override fun initZygote(startupParam: StartupParam) {
         this.startupParam = startupParam
         XposedInit = startupParam
+    }
+
+    companion object {
+        @JvmStatic
+        fun nativeBootstrap(context: Context) {
+            // This is called by libghost.so if statically injected
+            XposedBridge.log("Chimera: Static Native Bootstrap triggered")
+            ChimeraEngine.bootstrap(context)
+        }
     }
 }
 

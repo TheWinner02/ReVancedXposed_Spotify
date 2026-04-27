@@ -54,6 +54,16 @@ android {
         versionCode = 33
         versionName = gitCommitDateProvider.get().trim()
         buildConfigField("String", "COMMIT_HASH", "\"${gitCommitHashProvider.get().trim()}\"")
+        
+        externalNativeBuild {
+            cmake {
+                cppFlags("-std=c++17")
+                arguments("-DANDROID_STL=c++_static")
+            }
+        }
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
     flavorDimensions += "abi"
     productFlavors {
@@ -69,6 +79,12 @@ android {
         )
     }
     buildFeatures.buildConfig = true
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = true

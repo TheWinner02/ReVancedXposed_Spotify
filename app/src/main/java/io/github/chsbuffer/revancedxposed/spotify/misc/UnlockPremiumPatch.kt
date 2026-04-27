@@ -64,7 +64,7 @@ fun SpotifyHook.UnlockPremium() {
     // --- 4. ANTI-SHUFFLE (GOOGLE ASSISTANT) ---
     runCatching {
         XposedHelpers.findAndHookMethod(
-            $$"com.spotify.player.model.command.options.AutoValue_PlayerOptionOverrides$Builder",
+            "com.spotify.player.model.command.options.AutoValue_PlayerOptionOverrides\$Builder",
             classLoader,
             "build",
             object : XC_MethodHook() {
