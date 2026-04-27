@@ -17,8 +17,20 @@ static char internal_apk_path[512] = "";
 
 bool is_spotify_apk(const char* pathname) {
     if (pathname == nullptr || strlen(internal_apk_path) == 0) return false;
-    // Supporta sia com.spotify.music che i cloni (es. com.spotify.music.mod)
-    return (strstr(pathname, "com.spotify.music") != nullptr) && (strstr(pathname, "base.apk") != nullptr);
+
+    // Controlla se il percorso contiene "com.spotify.music" (copre cloni e originale)
+    // e se finisce con ".apk" (solitamente base.apk o split_*.apk)
+    const char* is_spotify = strstr(pathname, "com.spotify.music");
+    const char* is_apk = strstr(pathname, ".apk");
+
+    // Se stiamo cercando di leggere un APK di Spotify, ma il percorso NON è quello
+    // dell'APK "pulito" che abbiamo impostato, allora dobbiamo dirottare la lettura.
+    if (is_spotify && is_apk) {
+        if (strcmp(pathname, internal_apk_path) != 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // Function types

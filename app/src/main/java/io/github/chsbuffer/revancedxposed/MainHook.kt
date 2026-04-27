@@ -173,25 +173,37 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
     @SuppressLint("SdCardPath", "SetWorldReadable")
     private fun prepareOriginalApk(lpparam: LoadPackageParam): File? {
-        val internalApk = File(lpparam.appInfo.dataDir, "cache/base.apk")
         val stockPkg = "com.spotify.music"
+        val internalApk = File(lpparam.appInfo.dataDir, "cache/base.apk")
 
         // 1. Prova a prelevare l'APK direttamente dall'app stock installata (Strategia Mochi)
+        // Usiamo IPackageManager direttamente tramite ActivityThread perché currentApplication è nullo qui
         if (lpparam.packageName != stockPkg) {
             try {
-                val context = XposedHelpers.callStaticMethod(XposedHelpers.findClass("android.app.ActivityThread", null), "currentApplication") as? android.content.Context
-                val pm = context?.packageManager
-                val stockInfo = pm?.getPackageInfo(stockPkg, 0)
-                val stockApkPath = stockInfo?.applicationInfo?.sourceDir
-                if (stockApkPath != null) {
-                    val stockFile = File(stockApkPath)
-                    if (stockFile.exists()) {
-                        XposedBridge.log("ReVancedXposed: Found stock Spotify at $stockApkPath. Using it for signatures.")
-                        return stockFile
+                val activityThreadClass = XposedHelpers.findClass("android.app.ActivityThread", null)
+                val sPackageManager = XposedHelpers.getStaticObjectField(activityThreadClass, "sPackageManager")
+                
+                if (sPackageManager != null) {
+                    val userId = XposedHelpers.callStaticMethod(XposedHelpers.findClass("android.os.UserHandle", null), "myUserId") as Int
+                    
+                    // getApplicationInfo(String packageName, int flags, int userId)
+                    val appInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        XposedHelpers.callMethod(sPackageManager, "getApplicationInfo", stockPkg, 0L, userId)
+                    } else {
+                        XposedHelpers.callMethod(sPackageManager, "getApplicationInfo", stockPkg, 0, userId)
+                    } as? android.content.pm.ApplicationInfo
+
+                    val stockApkPath = appInfo?.sourceDir
+                    if (stockApkPath != null) {
+                        val stockFile = File(stockApkPath)
+                        if (stockFile.exists()) {
+                            XposedBridge.log("ReVancedXposed: Found stock Spotify at $stockApkPath via IPackageManager.")
+                            return stockFile
+                        }
                     }
                 }
             } catch (e: Exception) {
-                XposedBridge.log("ReVancedXposed: Could not find stock app: ${e.message}")
+                XposedBridge.log("ReVancedXposed: Could not find stock app via IPackageManager: ${e.message}")
             }
         }
         
