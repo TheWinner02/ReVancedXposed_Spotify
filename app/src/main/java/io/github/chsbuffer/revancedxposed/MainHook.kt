@@ -89,10 +89,12 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             val prefs = context.getSharedPreferences("spotify_prefs", 0)
             XposedBridge.log("Chimera: Initializing legacy hook chain...")
             
+            /*
             if (isReVancedPatched(lpparam)) {
                 Utils.showToastLong("ReVanced Xposed FE module does not work with patched app")
                 return@inContext
             }
+            */
 
             try {
                 if (prefs.getBoolean("enable_premium", true)) {
