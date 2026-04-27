@@ -50,7 +50,7 @@ android {
     namespace = "io.github.chsbuffer.revancedxposed"
 
     defaultConfig {
-        applicationId = myPackageName
+        applicationId = "io.github.chsbuffer.revancedxposed"
         versionCode = 33
         versionName = gitCommitDateProvider.get().trim()
         buildConfigField("String", "COMMIT_HASH", "\"${gitCommitHashProvider.get().trim()}\"")
@@ -124,11 +124,14 @@ dependencies {
     implementation(libs.annotation)
     implementation(libs.kotlinx.serialization.protobuf)
     implementation(libs.material)
+    
+    // For standalone Chimera injection, we bundle Xposed APIs
+    implementation(libs.xposed)
+    
     testImplementation(kotlin("test-junit5"))
     testImplementation(libs.junit.jupiter.params)
     testImplementation(libs.jadx.core)
     testImplementation(libs.slf4j.simple)
-    compileOnly(libs.xposed)
     compileOnly(project(":stub"))
 }
 
