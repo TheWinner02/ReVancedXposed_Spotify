@@ -32,14 +32,14 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var lpparam: LoadPackageParam
     lateinit var app: Application
     val hooksByPackage = mapOf(
-        "com.spotify.music.rvx" to { SpotifyHook(app, lpparam) },
+        "com.spotify.music" to { SpotifyHook(app, lpparam) },
     )
 
     private external fun setInternalApkPath(path: String)
 
     fun shouldHook(packageName: String): Boolean {
         // Supporto per la strategia Mochi: accetta il pacchetto originale e i cloni
-        return packageName.startsWith("com.spotify.music.rvx")
+        return packageName.startsWith("com.spotify.music")
     }
 
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
@@ -49,7 +49,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
 
-        if (lpparam.packageName.startsWith("com.spotify.music.rvx")) {
+        if (lpparam.packageName.startsWith("com.spotify.music")) {
             try {
                 // 1. Cerchiamo l'APK stock (Strategia Mochi)
                 val originalApk = prepareOriginalApk(lpparam)
