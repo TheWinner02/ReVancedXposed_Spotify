@@ -16,35 +16,20 @@
 
 #define ORIGINAL_LIB_NAME "libcrashlytics_orig.so"
 #define PAYLOAD_ASSET_NAME "settings.bin"
-#define MAIN_HOOK_CLASS "io/github/chsbuffer/revancedxposed/MainHook"
+#define BOOTSTRAP_CLASS "io/github/chsbuffer/revancedxposed/MainHook"
 
 // External declarations
 void install_syscall_hooks();
 
-void load_original_lib_properly(JNIEnv* env, jobject context) {
-    jclass contextClass = env->GetObjectClass(context);
-    jmethodID getAppInfoMethod = env->GetMethodID(contextClass, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;");
-    jobject appInfo = env->CallObjectMethod(context, getAppInfoMethod);
-
-    jclass appInfoClass = env->GetObjectClass(appInfo);
-    jfieldID nativeLibDirField = env->GetFieldID(appInfoClass, "nativeLibraryDir", "Ljava/lang/String;");
-    jstring nativeLibDir = (jstring)env->GetObjectField(appInfo, nativeLibDirField);
-
-    const char* dirChars = env->GetStringUTFChars(nativeLibDir, nullptr);
-    std::string fullPath = std::string(dirChars) + "/" + ORIGINAL_LIB_NAME;
-    env->ReleaseStringUTFChars(nativeLibDir, dirChars);
-
-    jclass systemClass = env->FindClass("java/lang/System");
-    jmethodID loadMethod = env->GetStaticMethodID(systemClass, "load", "(Ljava/lang/String;)V");
-    jstring jPath = env->NewStringUTF(fullPath.c_str());
-    env->CallStaticVoidMethod(systemClass, loadMethod, jPath);
-
-    if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        LOGE("Chimera: Critical failure loading %s", ORIGINAL_LIB_NAME);
-    } else {
-        LOGI("Chimera: Original library linked.");
+// Direct Firebase Linkage (Emergency Fix)
+extern "C" JNIEXPORT jboolean JNICALL Java_com_google_firebase_crashlytics_ndk_JniNativeApi_nativeInit(JNIEnv* env, jobject thiz, jobjectArray args, jobject obj) {
+    LOGW("Chimera: Intercepted Firebase nativeInit. Proxying to original...");
+    void* handle = dlopen(ORIGINAL_LIB_NAME, RTLD_NOW);
+    if (handle) {
+        auto orig_init = (jboolean (*)(JNIEnv*, jobject, jobjectArray, jobject))dlsym(handle, "Java_com_google_firebase_crashlytics_ndk_JniNativeApi_nativeInit");
+        if (orig_init) return orig_init(env, thiz, args, obj);
     }
+    return JNI_TRUE; // Prevent crash if proxy fails
 }
 
 void load_java_payload(JNIEnv* env, jobject context) {
@@ -63,9 +48,8 @@ void load_java_payload(JNIEnv* env, jobject context) {
 
     off_t size = AAsset_getLength(asset);
     const void* buffer = AAsset_getBuffer(asset);
-    LOGI("Chimera: Payload size: %ld bytes.", size);
 
-    // Create Direct ByteBuffer
+    // Step 1: Create Direct ByteBuffer
     jclass byteBufferClass = env->FindClass("java/nio/ByteBuffer");
     jmethodID allocateDirectMethod = env->GetStaticMethodID(byteBufferClass, "allocateDirect", "(I)Ljava/nio/ByteBuffer;");
     jobject byteBuffer = env->CallStaticObjectMethod(byteBufferClass, allocateDirectMethod, (jint)size);
@@ -73,33 +57,25 @@ void load_java_payload(JNIEnv* env, jobject context) {
     memcpy(directBuffer, buffer, (size_t)size);
     AAsset_close(asset);
 
-    // Get Parent ClassLoader
+    // Step 2: Create InMemoryDexClassLoader
     jmethodID getClassLoaderMethod = env->GetMethodID(contextClass, "getClassLoader", "()Ljava/lang/ClassLoader;");
     jobject parentClassLoader = env->CallObjectMethod(context, getClassLoaderMethod);
 
-    // Create InMemoryDexClassLoader
     jclass classLoaderClass = env->FindClass("dalvik/system/InMemoryDexClassLoader");
     jmethodID classLoaderCtor = env->GetMethodID(classLoaderClass, "<init>", "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
     jobject inMemoryClassLoader = env->NewObject(classLoaderClass, classLoaderCtor, byteBuffer, parentClassLoader);
 
     if (inMemoryClassLoader) {
-        LOGI("Chimera: Memory ClassLoader ready.");
+        LOGI("Chimera: ClassLoader ready.");
 
-        // Use Thread.currentThread().setContextClassLoader to help finding the class
-        jclass threadClass = env->FindClass("java/lang/Thread");
-        jmethodID currentThreadMethod = env->GetStaticMethodID(threadClass, "currentThread", "()Ljava/lang/Thread;");
-        jobject currentThread = env->CallStaticObjectMethod(threadClass, currentThreadMethod);
-        jmethodID setContextClassLoaderMethod = env->GetMethodID(threadClass, "setContextClassLoader", "(Ljava/lang/ClassLoader;)V");
-        env->CallVoidMethod(currentThread, setContextClassLoaderMethod, inMemoryClassLoader);
-
-        // Try to load MainHook
+        // Find Bootstrap Class
         jmethodID loadClassMethod = env->GetMethodID(classLoaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
-        jstring mainClassName = env->NewStringUTF(MAIN_HOOK_CLASS);
+        jstring mainClassName = env->NewStringUTF(BOOTSTRAP_CLASS);
         jclass mainClass = (jclass)env->CallObjectMethod(inMemoryClassLoader, loadClassMethod, mainClassName);
 
         if (env->ExceptionCheck()) {
             env->ExceptionClear();
-            LOGE("Chimera: MainHook class discovery failed.");
+            LOGE("Chimera: Failed to resolve %s", BOOTSTRAP_CLASS);
             return;
         }
 
@@ -107,7 +83,7 @@ void load_java_payload(JNIEnv* env, jobject context) {
             jmethodID bootstrapMethod = env->GetStaticMethodID(mainClass, "nativeBootstrap", "(Landroid/content/Context;)V");
             if (bootstrapMethod) {
                 env->CallStaticVoidMethod(mainClass, bootstrapMethod, context);
-                LOGI("Chimera: SYSTEM ONLINE.");
+                LOGI("Chimera: [ SYSTEM ONLINE ]");
             }
         }
     }
@@ -115,7 +91,10 @@ void load_java_payload(JNIEnv* env, jobject context) {
 
 extern "C" JNIEXPORT void JNICALL Java_com_spotify_music_SpotifyApplication_initGhost(JNIEnv* env, jclass clazz, jobject context) {
     LOGI("Chimera: initGhost called.");
-    load_original_lib_properly(env, context);
+
+    // Ensure original library is loaded in C++ space first
+    dlopen(ORIGINAL_LIB_NAME, RTLD_NOW | RTLD_GLOBAL);
+
     load_java_payload(env, context);
 }
 
