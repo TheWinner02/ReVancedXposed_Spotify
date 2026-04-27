@@ -54,7 +54,7 @@ void load_java_payload(JNIEnv* env, jobject context) {
     const void* buffer = AAsset_getBuffer(asset);
     LOGI("Chimera: Payload loaded in memory (%ld bytes).", size);
 
-    // Create Direct ByteBuffer
+    // Create Direct ByteBuffer (This avoids ashmem pinning issues)
     jclass byteBufferClass = env->FindClass("java/nio/ByteBuffer");
     jmethodID allocateDirectMethod = env->GetStaticMethodID(byteBufferClass, "allocateDirect", "(I)Ljava/nio/ByteBuffer;");
     jobject byteBuffer = env->CallStaticObjectMethod(byteBufferClass, allocateDirectMethod, (jint)size);
@@ -62,19 +62,19 @@ void load_java_payload(JNIEnv* env, jobject context) {
     memcpy(directBuffer, buffer, (size_t)size);
     AAsset_close(asset);
 
-    // Get System or Spotify ClassLoader as parent
+    // Get the base Spotify ClassLoader
     jmethodID getClassLoaderMethod = env->GetMethodID(contextClass, "getClassLoader", "()Ljava/lang/ClassLoader;");
-    jobject parentClassLoader = env->CallObjectMethod(context, getClassLoaderMethod);
+    jobject spotifyClassLoader = env->CallObjectMethod(context, getClassLoaderMethod);
 
     // Create InMemoryDexClassLoader
     jclass classLoaderClass = env->FindClass("dalvik/system/InMemoryDexClassLoader");
     jmethodID classLoaderCtor = env->GetMethodID(classLoaderClass, "<init>", "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
-    jobject inMemoryClassLoader = env->NewObject(classLoaderClass, classLoaderCtor, byteBuffer, parentClassLoader);
+    jobject inMemoryClassLoader = env->NewObject(classLoaderClass, classLoaderCtor, byteBuffer, spotifyClassLoader);
 
     if (inMemoryClassLoader) {
         LOGI("Chimera: InMemoryDexClassLoader created successfully.");
 
-        // Find MainHook class
+        // Use the newly created ClassLoader to find our MainHook
         jmethodID loadClassMethod = env->GetMethodID(classLoaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
         jstring mainClassName = env->NewStringUTF(MAIN_HOOK_CLASS);
         jclass mainClass = (jclass)env->CallObjectMethod(inMemoryClassLoader, loadClassMethod, mainClassName);
@@ -82,7 +82,7 @@ void load_java_payload(JNIEnv* env, jobject context) {
         if (env->ExceptionCheck()) {
             env->ExceptionDescribe();
             env->ExceptionClear();
-            LOGE("Chimera: ClassNotFoundException for MainHook.");
+            LOGE("Chimera: ClassNotFoundException for MainHook in virtual memory.");
             return;
         }
 
