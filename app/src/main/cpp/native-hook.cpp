@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <dlfcn.h>
 #include <sys/system_properties.h>
+#include <sys/ptrace.h>
 #include "dobby.h"
 
 #define LOG_TAG "ReVancedXposedNative"
@@ -16,28 +17,33 @@ static char internal_apk_path[512] = "";
 
 bool is_spotify_apk(const char* pathname) {
     if (pathname == nullptr || strlen(internal_apk_path) == 0) return false;
+    // Supporta sia com.spotify.music che i cloni (es. com.spotify.music.mod)
     return (strstr(pathname, "com.spotify.music") != nullptr) && (strstr(pathname, "base.apk") != nullptr);
 }
 
 // Function types
 typedef int (*open_t)(const char*, int, ...);
 typedef int (*openat_t)(int, const char*, int, ...);
+typedef FILE* (*fopen_t)(const char*, const char*);
 typedef int (*access_t)(const char*, int);
 typedef int (*fstatat_t)(int, const char*, struct stat*, int);
 typedef int (*stat_t)(const char*, struct stat*);
 typedef int (*lstat_t)(const char*, struct stat*);
 typedef ssize_t (*readlink_t)(const char*, char*, size_t);
 typedef int (*__system_property_get_t)(const char*, char*);
+typedef long (*ptrace_t)(int, pid_t, void*, void*);
 
 // Original pointers
 static open_t orig_open = nullptr;
 static openat_t orig_openat = nullptr;
+static fopen_t orig_fopen = nullptr;
 static access_t orig_access = nullptr;
 static fstatat_t orig_fstatat = nullptr;
 static stat_t orig_stat = nullptr;
 static lstat_t orig_lstat = nullptr;
 static readlink_t orig_readlink = nullptr;
 static __system_property_get_t orig_prop_get = nullptr;
+static ptrace_t orig_ptrace = nullptr;
 
 // Hooks
 int my_open(const char* pathname, int flags, mode_t mode) {
@@ -54,6 +60,14 @@ int my_openat(int dirfd, const char* pathname, int flags, mode_t mode) {
         return orig_openat(dirfd, internal_apk_path, flags, mode);
     }
     return orig_openat(dirfd, pathname, flags, mode);
+}
+
+FILE* my_fopen(const char* pathname, const char* mode) {
+    if (is_spotify_apk(pathname)) {
+        LOGI("Redirecting fopen: %s -> %s", pathname, internal_apk_path);
+        return orig_fopen(internal_apk_path, mode);
+    }
+    return orig_fopen(pathname, mode);
 }
 
 int my_access(const char* pathname, int mode) {
@@ -96,6 +110,15 @@ ssize_t my_readlink(const char* pathname, char* buf, size_t bufsiz) {
     return orig_readlink(pathname, buf, bufsiz);
 }
 
+// Anti-Anti-Debug: Bypass ptrace checks
+long my_ptrace(int request, pid_t pid, void* addr, void* data) {
+    if (request == PTRACE_TRACEME) {
+        LOGI("Bypassing ptrace(PTRACE_TRACEME)");
+        return 0; // Success, pretend we are not traced
+    }
+    return orig_ptrace(request, pid, addr, data);
+}
+
 // Spoof system properties to hide root/debugging
 int my_system_property_get(const char* name, char* value) {
     int ret = orig_prop_get(name, value);
@@ -126,6 +149,7 @@ void install_hooks() {
     if (libc) {
         DobbyHook(dlsym(libc, "open"), (dobby_dummy_func_t)my_open, (dobby_dummy_func_t*)&orig_open);
         DobbyHook(dlsym(libc, "openat"), (dobby_dummy_func_t)my_openat, (dobby_dummy_func_t*)&orig_openat);
+        DobbyHook(dlsym(libc, "fopen"), (dobby_dummy_func_t)my_fopen, (dobby_dummy_func_t*)&orig_fopen);
         DobbyHook(dlsym(libc, "access"), (dobby_dummy_func_t)my_access, (dobby_dummy_func_t*)&orig_access);
         DobbyHook(dlsym(libc, "fstatat"), (dobby_dummy_func_t)my_fstatat, (dobby_dummy_func_t*)&orig_fstatat);
 
@@ -137,6 +161,9 @@ void install_hooks() {
 
         void* readlink_addr = dlsym(libc, "readlink");
         if (readlink_addr) DobbyHook(readlink_addr, (dobby_dummy_func_t)my_readlink, (dobby_dummy_func_t*)&orig_readlink);
+
+        void* ptrace_addr = dlsym(libc, "ptrace");
+        if (ptrace_addr) DobbyHook(ptrace_addr, (dobby_dummy_func_t)my_ptrace, (dobby_dummy_func_t*)&orig_ptrace);
 
         void* prop_get_addr = dlsym(libc, "__system_property_get");
         if (prop_get_addr) DobbyHook(prop_get_addr, (dobby_dummy_func_t)my_system_property_get, (dobby_dummy_func_t*)&orig_prop_get);

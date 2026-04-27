@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ "dobby" ]
+    branches: [ "dobby_cloner" ]
   schedule:
     - cron: '0 0 * * *'
 

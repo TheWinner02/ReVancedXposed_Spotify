@@ -31,7 +31,6 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     lateinit var startupParam: StartupParam
     lateinit var lpparam: LoadPackageParam
     lateinit var app: Application
-    var targetPackageName: String? = null
     val hooksByPackage = mapOf(
         "com.spotify.music" to { SpotifyHook(app, lpparam) },
     )
@@ -39,10 +38,10 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     private external fun setInternalApkPath(path: String)
 
     fun shouldHook(packageName: String): Boolean {
-        if (!hooksByPackage.containsKey(packageName)) return false
-        if (targetPackageName == null) targetPackageName = packageName
-        return targetPackageName == packageName
+        // Accetta com.spotify.music e qualsiasi variante clonata (es. com.spotify.music.mochi)
+        return packageName.startsWith("com.spotify.music")
     }
+
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
         XposedBridge.log("ReVancedXposed: handleLoadPackage called for ${lpparam.packageName}")
         
@@ -50,7 +49,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (!shouldHook(lpparam.packageName)) return
         this.lpparam = lpparam
 
-        if (lpparam.packageName == "com.spotify.music") {
+        if (lpparam.packageName.startsWith("com.spotify.music")) {
             try {
                 val internalApk = prepareOriginalApk(lpparam)
                 spoofSignature(lpparam)
@@ -173,11 +172,31 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     @SuppressLint("SdCardPath", "SetWorldReadable")
     private fun prepareOriginalApk(lpparam: LoadPackageParam): File? {
         val internalApk = File(lpparam.appInfo.dataDir, "cache/base.apk")
+        val stockPkg = "com.spotify.music"
+
+        // 1. Prova a prelevare l'APK direttamente dall'app stock installata (Strategia Mochi)
+        if (lpparam.packageName != stockPkg) {
+            try {
+                val context = XposedHelpers.callStaticMethod(XposedHelpers.findClass("android.app.ActivityThread", null), "currentApplication") as? android.content.Context
+                val pm = context?.packageManager
+                val stockInfo = pm?.getPackageInfo(stockPkg, 0)
+                val stockApkPath = stockInfo?.applicationInfo?.sourceDir
+                if (stockApkPath != null) {
+                    val stockFile = File(stockApkPath)
+                    if (stockFile.exists()) {
+                        XposedBridge.log("ReVancedXposed: Found stock Spotify at $stockApkPath. Using it for signatures.")
+                        return stockFile
+                    }
+                }
+            } catch (e: Exception) {
+                XposedBridge.log("ReVancedXposed: Could not find stock app: ${e.message}")
+            }
+        }
         
-        // Elenco di percorsi dove l'utente può mettere l'APK originale
+        // 2. Fallback su percorsi pubblici
         val potentialPaths = listOf(
             File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk"),
-            File("/sdcard/Android/media/${lpparam.packageName}/base.apk"),
+            File("/sdcard/Android/media/$stockPkg/base.apk"),
             File("/sdcard/Download/base.apk")
         )
 
@@ -195,7 +214,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             }
         } else if (!internalApk.exists()) {
             XposedBridge.log("ReVancedXposed: Original APK not found or not readable in any public folder.")
-            XposedBridge.log("ReVancedXposed: Please ensure base.apk is in Download or Android/media/${lpparam.packageName}/")
+            XposedBridge.log("ReVancedXposed: Please ensure base.apk is in Download or Android/media/$stockPkg/")
         }
 
         return if (internalApk.exists()) internalApk else null
@@ -203,7 +222,8 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
     private fun spoofSignature(lpparam: LoadPackageParam) {
         val originalApkPath = File(lpparam.appInfo.dataDir, "cache/base.apk").absolutePath
-        val targetPkg = "com.spotify.music"
+        val stockPkg = "com.spotify.music"
+        val currentPkg = lpparam.packageName
 
         // 1. Hook PackageManager (Legacy and Modern)
         val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", lpparam.classLoader)
@@ -211,10 +231,10 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         val pmHook = object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
                 val pkgName = param.args[0] as String
-                if (pkgName != targetPkg) return
+                if (pkgName != currentPkg && pkgName != stockPkg) return
 
                 val info = param.result as? PackageInfo ?: return
-                XposedBridge.log("ReVancedXposed: Intercepted getPackageInfo for $targetPkg")
+                XposedBridge.log("ReVancedXposed: Intercepted getPackageInfo for $pkgName")
                 
                 applyOriginalSignature(info, originalApkPath, param.thisObject as PackageManager)
             }
@@ -242,10 +262,10 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 XposedBridge.hookAllMethods(originalProxy.javaClass, "getPackageInfo", object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val pkgName = param.args[0] as? String ?: return
-                        if (pkgName != targetPkg) return
+                        if (pkgName != currentPkg && pkgName != stockPkg) return
                         
                         val info = param.result as? PackageInfo ?: return
-                        XposedBridge.log("ReVancedXposed: IPackageManager intercepted $targetPkg")
+                        XposedBridge.log("ReVancedXposed: IPackageManager intercepted $pkgName")
                         
                         // Use system package manager to get signatures from archive
                         val context = XposedHelpers.callStaticMethod(activityThreadClass, "currentApplication") as? android.content.Context
@@ -335,8 +355,8 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     }
 
     private fun bypassGmsIntegrity(lpparam: LoadPackageParam) {
-        val targetPkg = "com.spotify.music"
-        val gmsPkg = "com.google.android.gms"
+        val stockPkg = "com.spotify.music"
+        val currentPkg = lpparam.packageName
 
         // Hook per ingannare i GMS quando interrogano la firma di Spotify
         XposedHelpers.findAndHookMethod(
@@ -349,7 +369,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val pkgName = param.args[0] as? String ?: return
                     // Se l'app che chiede è GMS e il bersaglio è Spotify, o viceversa
-                    if (pkgName == targetPkg) {
+                    if (pkgName == currentPkg || pkgName == stockPkg) {
                         val info = param.result as? PackageInfo ?: return
                         val originalApkPath = File(lpparam.appInfo.dataDir, "cache/base.apk").absolutePath
                         applyOriginalSignature(info, originalApkPath, param.thisObject as PackageManager)
