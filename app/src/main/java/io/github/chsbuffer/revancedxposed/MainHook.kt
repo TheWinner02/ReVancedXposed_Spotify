@@ -51,19 +51,21 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         if (lpparam.packageName.startsWith("com.spotify.music")) {
             try {
-                val internalApk = prepareOriginalApk(lpparam)
-                spoofSignature(lpparam)
+                val originalApk = prepareOriginalApk(lpparam)
+                val originalApkPath = originalApk?.absolutePath ?: File(lpparam.appInfo.dataDir, "cache/base.apk").absolutePath
+                
+                spoofSignature(lpparam, originalApkPath)
                 hideXposedFromStackTrace()
                 bypassAndroidIdRestriction(lpparam)
-                bypassGmsIntegrity(lpparam)
+                bypassGmsIntegrity(lpparam, originalApkPath)
                 XposedBridge.log("ReVancedXposed: Stealth and GMS bypasses initialized")
                 
                 // Carica la libreria nativa per Spotify per attivare gli hook Dobby
                 XposedBridge.log("ReVancedXposed: Attempting to load native library for Spotify...")
                 try {
                     System.loadLibrary("revancedxposed")
-                    if (internalApk != null) {
-                        setInternalApkPath(internalApk.absolutePath)
+                    if (originalApk != null) {
+                        setInternalApkPath(originalApk.absolutePath)
                     }
                     XposedBridge.log("ReVancedXposed: Native library 'revancedxposed' loaded successfully")
                 } catch (e: UnsatisfiedLinkError) {
@@ -131,7 +133,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             // Ora è isolato: se Roundy sopra crasha, questo verrà comunque eseguito!
             try {
                 if (prefs.getBoolean("enable_premium", false)) {
-                    hooksByPackage[lpparam.packageName]?.invoke()?.Hook()
+                    hooksByPackage["com.spotify.music"]?.invoke()?.Hook()
                 }
             } catch (e: Exception) {
                 XposedBridge.log("Mod Premium fallita: ${e.message}")
@@ -220,8 +222,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return if (internalApk.exists()) internalApk else null
     }
 
-    private fun spoofSignature(lpparam: LoadPackageParam) {
-        val originalApkPath = File(lpparam.appInfo.dataDir, "cache/base.apk").absolutePath
+    private fun spoofSignature(lpparam: LoadPackageParam, originalApkPath: String) {
         val stockPkg = "com.spotify.music"
         val currentPkg = lpparam.packageName
 
@@ -354,7 +355,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         }
     }
 
-    private fun bypassGmsIntegrity(lpparam: LoadPackageParam) {
+    private fun bypassGmsIntegrity(lpparam: LoadPackageParam, originalApkPath: String) {
         val stockPkg = "com.spotify.music"
         val currentPkg = lpparam.packageName
 
@@ -371,7 +372,6 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                     // Se l'app che chiede è GMS e il bersaglio è Spotify, o viceversa
                     if (pkgName == currentPkg || pkgName == stockPkg) {
                         val info = param.result as? PackageInfo ?: return
-                        val originalApkPath = File(lpparam.appInfo.dataDir, "cache/base.apk").absolutePath
                         applyOriginalSignature(info, originalApkPath, param.thisObject as PackageManager)
                     }
                 }
