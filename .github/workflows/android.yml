@@ -5,47 +5,50 @@ on:
     branches: [ "refactor" ]
   schedule:
     - cron: '0 0 * * *'
+  workflow_dispatch: # Permette di avviare la build manualmente da GitHub
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: true
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive # Fondamentale per Dobby e Chimera
+          fetch-depth: 0        # Necessario per git rev-parse e la numerazione versione
 
-    - name: set up JDK
-      uses: actions/setup-java@v4
-      with:
-        java-version: '21'
-        distribution: 'temurin'
-        cache: gradle
+      - name: set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
-    - name: Get random number
-      id: random
-      run: echo "NUMBER=$(shuf -i 1-10000 -n 1)" >> $GITHUB_OUTPUT
+      - name: Get random number
+        id: random
+        run: echo "NUMBER=$(shuf -i 1-10000 -n 1)" >> $GITHUB_OUTPUT
 
-    - name: Build Release
-      run: ./gradlew assembleUniversalRelease -PPACKAGE_NAME_SEED=${{ steps.random.outputs.NUMBER }}
+      - name: Build Release (Chimera Architecture)
+        run: ./gradlew assembleUniversalRelease -PPACKAGE_NAME_SEED=${{ steps.random.outputs.NUMBER }} --stacktrace
 
-    - name: Upload a Release Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: rvxp-ci-release-apk
-        path: |
-          app/build/outputs/apk/universal/release
-          app/build/outputs/mapping/universalRelease/mapping.txt
+      - name: Upload a Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReVancedXposed-Chimera
+          path: |
+            app/build/outputs/apk/universal/release/*.apk
+            app/build/outputs/mapping/universalRelease/mapping.txt
 
-    - name: Create AutoBuild Release
-      run: |
-        GIT_DESCRIBE=$(git rev-parse --short HEAD)
-        GIT_COMMIT_DATE=$(git log -1 --format=%cd --date=format:%y%m%d)
-        cd app/build/outputs/apk/universal/release/
-        mv app-universal-release.apk ReVancedXposedFESpotify-${GIT_COMMIT_DATE}.apk
-        gh release create autobuild ReVancedXposedFESpotify-${GIT_COMMIT_DATE}.apk --draft --title "Build ${GIT_COMMIT_DATE}" --notes "Commit ${GIT_DESCRIBE}. The package name and signature of this build are different every day. You don't have to reinstall it every day."
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create AutoBuild Release
+        if: github.event_name != 'pull_request'
+        run: |
+          GIT_DESCRIBE=$(git rev-parse --short HEAD)
+          GIT_COMMIT_DATE=$(git log -1 --format=%cd --date=format:%y%m%d)
+          cd app/build/outputs/apk/universal/release/
+          mv app-universal-release.apk ReVancedXposedFESpotify-${GIT_COMMIT_DATE}.apk
+          gh release create autobuild ReVancedXposedFESpotify-${GIT_COMMIT_DATE}.apk --draft --title "Build ${GIT_COMMIT_DATE}" --notes "Chimera Architecture - Commit ${GIT_DESCRIBE}. This build is dynamically versioned."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
