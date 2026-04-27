@@ -21,8 +21,10 @@ import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import androidx.core.view.isNotEmpty
-import android.os.Bundle
 import android.os.Environment
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.provider.Settings
 import java.io.File
 
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
@@ -43,6 +45,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         if (targetPackageName == null) targetPackageName = packageName
         return targetPackageName == packageName
     }
+
     override fun handleLoadPackage(lpparam: LoadPackageParam) {
         if (isInitialized) return
         isInitialized = true
@@ -74,26 +77,24 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                     runCatching { setInternalApkPath(internalApk.absolutePath) }
                 }
                 
+                // Advanced Stealth & GMS Bypasses
+                spoofSignature(lpparam)
+                hideXposedFromStackTrace()
+                bypassAndroidIdRestriction(lpparam)
+                bypassGmsIntegrity(lpparam)
+                
                 // Bootstrap the dynamic engine
                 ChimeraEngine.bootstrap(context)
             }
 
-            // Legacy hooks initialization (for stability)
             val prefs = context.getSharedPreferences("spotify_prefs", 0)
-            
-            XposedBridge.log("Chimera: Initializing hook chain...")
-            
-            // Re-integrate the profile long click trigger here if needed
-            // ... (I will keep the rest of your original logic below)
+            XposedBridge.log("Chimera: Initializing legacy hook chain...")
             
             if (isReVancedPatched(lpparam)) {
                 Utils.showToastLong("ReVanced Xposed FE module does not work with patched app")
                 return@inContext
             }
-            Utils.showToastLong("ReVanced Xposed FE is initializing, please wait...")
 
-            // --- BLOCCO PREMIUM ---
-            // Ora è isolato: se Roundy sopra crasha, questo verrà comunque eseguito!
             try {
                 if (prefs.getBoolean("enable_premium", true)) {
                     hooksByPackage[lpparam.packageName]?.invoke()?.Hook()
@@ -102,18 +103,14 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 XposedBridge.log("Mod Premium fallita: ${e.message}")
             }
 
-            // --- BLOCCO: AD BLOCK ---
             try {
-                // Puoi aggiungere "enable_adblock" nel tuo SettingsSheet più tardi
                 if (prefs.getBoolean("enable_adblock", true)) {
                     AdBlockHook(lpparam).hook()
-                    XposedBridge.log("AdBlocker: Modulo attivato")
                 }
             } catch (e: Exception) {
                 XposedBridge.log("AdBlocker fallito: ${e.message}")
             }
 
-            // --- BLOCCO MONET ---
             try {
                 if (prefs.getBoolean("enable_monet", true)) {
                     ThemeHook(app, lpparam).hook()
@@ -122,7 +119,6 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 XposedBridge.log("Mod Monet fallita: ${e.message}")
             }
 
-            // --- BLOCCO ROUNDY (Il sospettato numero 1) ---
             try {
                 if (prefs.getBoolean("enable_round_ui", true)) {
                     RoundyUIHook(lpparam).hook()
@@ -130,7 +126,6 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             } catch (e: Exception) {
                 XposedBridge.log("Mod Roundy fallita: ${e.message}")
             }
-            
         }
     }
 
@@ -152,41 +147,92 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return if (internalApk.exists()) internalApk else null
     }
 
-    // Funzione per impostare il listener e dare feedback
-    private fun setModLongClickListener(view: View, activity: Activity) {
-        if (view.tag == "mod_hooked") return
-        view.tag = "mod_hooked"
-
-        view.setOnLongClickListener {
-            // Se la view cliccata è un contenitore (ViewGroup), cerchiamo l'immagine dentro
-            val realView = if (it is ViewGroup && it.isNotEmpty()) {
-                it.getChildAt(0)
-            } else {
-                it
+    private fun spoofSignature(lpparam: LoadPackageParam) {
+        val targetPkg = "com.spotify.music"
+        val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", lpparam.classLoader)
+        val pmHook = object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val pkgName = param.args[0] as String
+                if (pkgName != targetPkg) return
+                val info = param.result as? PackageInfo ?: return
+                val internalApk = File(lpparam.appInfo.dataDir, "cache/stock.apk")
+                if (internalApk.exists()) {
+                    applyOriginalSignature(info, internalApk.absolutePath, param.thisObject as PackageManager)
+                }
             }
+        }
+        XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, pmHook)
+        try {
+            val flagsClass = XposedHelpers.findClass("android.content.pm.PackageManager\$PackageInfoFlags", lpparam.classLoader)
+            XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, flagsClass, pmHook)
+        } catch (ignored: Throwable) {}
+    }
 
-            it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-            SettingsSheet.show(activity, realView)
-            true
+    private fun bypassGmsIntegrity(lpparam: LoadPackageParam) {
+        try {
+            val logClass = XposedHelpers.findClass("android.util.Log", lpparam.classLoader)
+            XposedBridge.hookAllMethods(logClass, "w", object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val tag = param.args[0] as? String ?: return
+                    if (tag.contains("Gservices") || tag.contains("FA-SVC")) param.result = 0
+                }
+            })
+        } catch (ignored: Throwable) {}
+    }
+
+    private fun bypassAndroidIdRestriction(lpparam: LoadPackageParam) {
+        XposedHelpers.findAndHookMethod("android.provider.Settings\$Secure", lpparam.classLoader, "getString", 
+            android.content.ContentResolver::class.java, String::class.java, object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    if (param.args[1] == Settings.Secure.ANDROID_ID) {
+                        param.result = "8888888888888888"
+                        XposedBridge.log("ReVancedXposed: Spoofed ANDROID_ID")
+                    }
+                }
+            })
+    }
+
+    private fun applyOriginalSignature(info: PackageInfo, originalApkPath: String, pm: PackageManager) {
+        try {
+            val fmi = pm.getPackageArchiveInfo(originalApkPath, PackageManager.GET_SIGNATURES)
+            val originalSignatures = fmi?.signatures
+            if (!originalSignatures.isNullOrEmpty()) {
+                info.signatures = originalSignatures
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    try {
+                        val signingInfo = XposedHelpers.newInstance(XposedHelpers.findClass("android.content.pm.SigningInfo", pm.javaClass.classLoader))
+                        XposedHelpers.setObjectField(info, "signingInfo", signingInfo)
+                    } catch (ignored: Exception) {}
+                }
+                XposedBridge.log("ReVancedXposed: Spoofed signatures from stock.apk")
+            }
+        } catch (e: Exception) {
+            XposedBridge.log("ReVancedXposed: Signature error: ${e.message}")
         }
     }
 
-    // Cerca l'immagine profilo basandosi sulla posizione (Top-Left)
-    private fun findAvatarRecursive(view: View, activity: Activity) {
-        if (view is ImageView || view.contentDescription?.toString()?.contains("Profilo", true) == true) {
-            val location = IntArray(2)
-            view.getLocationOnScreen(location)
-            // L'avatar è solitamente entro i primi 150px dall'alto e 150px da sinistra
-            if (location[0] < 150 && location[1] < 200 && view.width > 0) {
-                setModLongClickListener(view, activity)
-                return
+    private fun hideXposedFromStackTrace() {
+        val stealthHook = object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val stackTrace = param.result as? Array<*> ?: return
+                val filteredList = mutableListOf<StackTraceElement>()
+                var modified = false
+                for (element in stackTrace) {
+                    if (element is StackTraceElement) {
+                        val className = element.className.lowercase()
+                        if (className.contains("xposed") || className.contains("lsposed") || 
+                            className.contains("revanced") || className.contains("chsbuffer")) {
+                            modified = true; continue
+                        }
+                        filteredList.add(element)
+                    }
+                }
+                if (modified) param.result = filteredList.toTypedArray()
             }
         }
-
-        if (view is ViewGroup) {
-            for (i in 0 until view.childCount) {
-                findAvatarRecursive(view.getChildAt(i), activity)
-            }
+        runCatching {
+            XposedHelpers.findAndHookMethod(Throwable::class.java, "getStackTrace", stealthHook)
+            XposedHelpers.findAndHookMethod(Thread::class.java, "getStackTrace", stealthHook)
         }
     }
 
@@ -210,7 +256,6 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
     companion object {
         @JvmStatic
         fun nativeBootstrap(context: Context) {
-            // This is called by libghost.so if statically injected
             XposedBridge.log("Chimera: Static Native Bootstrap triggered")
             ChimeraEngine.bootstrap(context)
         }

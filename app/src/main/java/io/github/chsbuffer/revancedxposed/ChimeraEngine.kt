@@ -12,7 +12,15 @@ import java.util.concurrent.Executors
  */
 object ChimeraEngine {
     private const val GIST_URL = "https://gist.githubusercontent.com/TheWinner02/33c706d15b0b2e8a1f6a/raw/spotify_headers.json"
-    private var dynamicHeaders: Map<String, String> = emptyMap()
+    
+    // Dati reali estratti dai file locali dell'utente (AyuGram Desktop/spoof/)
+    private val DEFAULT_HEADERS = mapOf(
+        "User-Agent" to "Spotify/9.0.58 iOS/17.7.2 (iPhone16,1)",
+        "X-Spotify-Client-Id" to "iphone-9.0.58.558.g200011c",
+        "X-Client-Platform" to "ios"
+    )
+    
+    private var dynamicHeaders: Map<String, String> = DEFAULT_HEADERS
 
     fun bootstrap(context: Context) {
         XposedBridge.log("ChimeraEngine: Bootstrapping engine...")
