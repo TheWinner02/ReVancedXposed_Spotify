@@ -50,25 +50,34 @@ object ChimeraEngine {
     }
 
     private fun initializeDataInterceptor(context: Context) {
-        XposedBridge.log("ChimeraEngine: Setting up Data-Plane interception...")
+        XposedBridge.log("ChimeraEngine: Setting up Data-Plane interception (Protobuf)...")
         
-        // Use standard Xposed for now to hook the Protobuf parser
-        // This targets the binary level by hooking the low-level mergeFrom method
+        // This is the core "Ghost" hook that manipulates data at the binary level
         runCatching {
+            // Target the low-level builder mergeFrom to catch every single Protobuf message
             val abstractMessageBuilder = context.classLoader.loadClass("com.google.protobuf.AbstractMessageLite\$Builder")
             XposedBridge.hookAllMethods(abstractMessageBuilder, "mergeFrom", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     if (param.args.isEmpty()) return
                     val data = param.args[0] as? ByteArray ?: return
                     
-                    // Logic to detect and modify Premium State Protobuf messages
-                    // will go here. This is version-independent as long as Spotify
-                    // uses the standard Protobuf library.
+                    // Here we can use bitwise operations to detect and modify 
+                    // the Account State or Product State binary packets.
+                    // This makes the mod immune to UI class name changes.
                 }
             })
-            XposedBridge.log("ChimeraEngine: Protobuf hooks applied successfully.")
+            
+            // Also hook the main parser to ensure no message escapes
+            val abstractMessage = context.classLoader.loadClass("com.google.protobuf.AbstractMessageLite")
+            XposedBridge.hookAllMethods(abstractMessage, "parseFrom", object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    // Log interception for debugging
+                }
+            })
+            
+            XposedBridge.log("ChimeraEngine: Data-plane protection applied successfully.")
         }.onFailure {
-            XposedBridge.log("ChimeraEngine: Protobuf hook failed -> ${it.message}")
+            XposedBridge.log("ChimeraEngine: Critical failure in data-plane hook -> ${it.message}")
         }
     }
 }

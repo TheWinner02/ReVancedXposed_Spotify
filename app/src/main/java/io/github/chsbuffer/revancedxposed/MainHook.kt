@@ -255,8 +255,12 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
     companion object {
         @JvmStatic
+        private external fun initChimera(context: Context)
+
+        @JvmStatic
         fun nativeBootstrap(context: Context) {
             XposedBridge.log("Chimera: Static Native Bootstrap triggered")
+            runCatching { initChimera(context) }
             ChimeraEngine.bootstrap(context)
         }
     }
