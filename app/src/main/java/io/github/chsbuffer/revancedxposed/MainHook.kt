@@ -176,34 +176,65 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         val stockPkg = "com.spotify.music"
         val internalApk = File(lpparam.appInfo.dataDir, "cache/base.apk")
 
+        XposedBridge.log("ReVancedXposed: Starting search for stock APK ($stockPkg)...")
+
         // 1. Prova a prelevare l'APK direttamente dall'app stock installata (Strategia Mochi)
-        // Usiamo IPackageManager direttamente tramite ActivityThread perché currentApplication è nullo qui
         if (lpparam.packageName != stockPkg) {
             try {
-                val activityThreadClass = XposedHelpers.findClass("android.app.ActivityThread", null)
-                val sPackageManager = XposedHelpers.getStaticObjectField(activityThreadClass, "sPackageManager")
-                
-                if (sPackageManager != null) {
-                    val userId = XposedHelpers.callStaticMethod(XposedHelpers.findClass("android.os.UserHandle", null), "myUserId") as Int
-                    
-                    // getApplicationInfo(String packageName, int flags, int userId)
-                    val appInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                        XposedHelpers.callMethod(sPackageManager, "getApplicationInfo", stockPkg, 0L, userId)
+                XposedBridge.log("ReVancedXposed: Discovery Step 1: Trying IPackageManager...")
+                val activityThreadClass = XposedHelpers.findClassIfExists("android.app.ActivityThread", null)
+                if (activityThreadClass == null) {
+                    XposedBridge.log("ReVancedXposed ERROR: ActivityThread class not found")
+                } else {
+                    val sPackageManager = XposedHelpers.getStaticObjectField(activityThreadClass, "sPackageManager")
+                    if (sPackageManager == null) {
+                        XposedBridge.log("ReVancedXposed ERROR: sPackageManager field is null")
                     } else {
-                        XposedHelpers.callMethod(sPackageManager, "getApplicationInfo", stockPkg, 0, userId)
-                    } as? android.content.pm.ApplicationInfo
+                        val userId = XposedHelpers.callStaticMethod(XposedHelpers.findClass("android.os.UserHandle", null), "myUserId") as Int
+                        XposedBridge.log("ReVancedXposed: Current UserID: $userId")
+                        
+                        val appInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                            XposedHelpers.callMethod(sPackageManager, "getApplicationInfo", stockPkg, 0L, userId)
+                        } else {
+                            XposedHelpers.callMethod(sPackageManager, "getApplicationInfo", stockPkg, 0, userId)
+                        } as? android.content.pm.ApplicationInfo
 
-                    val stockApkPath = appInfo?.sourceDir
-                    if (stockApkPath != null) {
-                        val stockFile = File(stockApkPath)
-                        if (stockFile.exists()) {
-                            XposedBridge.log("ReVancedXposed: Found stock Spotify at $stockApkPath via IPackageManager.")
-                            return stockFile
+                        if (appInfo != null) {
+                            val stockApkPath = appInfo.sourceDir
+                            XposedBridge.log("ReVancedXposed: IPackageManager returned path: $stockApkPath")
+                            if (stockApkPath != null && File(stockApkPath).exists()) {
+                                XposedBridge.log("ReVancedXposed SUCCESS: Stock APK found at $stockApkPath")
+                                return File(stockApkPath)
+                            } else {
+                                XposedBridge.log("ReVancedXposed ERROR: Path is null or file does not exist")
+                            }
+                        } else {
+                            XposedBridge.log("ReVancedXposed ERROR: getApplicationInfo returned null for $stockPkg")
                         }
                     }
                 }
             } catch (e: Exception) {
-                XposedBridge.log("ReVancedXposed: Could not find stock app via IPackageManager: ${e.message}")
+                XposedBridge.log("ReVancedXposed ERROR in Discovery Step 1: ${e.message}")
+            }
+
+            // 1b. Tentativo disperato via "pm path" (Shell)
+            try {
+                XposedBridge.log("ReVancedXposed: Discovery Step 2: Trying 'pm path' command...")
+                val process = Runtime.getRuntime().exec("pm path $stockPkg")
+                val reader = process.inputStream.bufferedReader()
+                val line = reader.readLine() // Formato: "package:/data/app/.../base.apk"
+                if (line != null && line.startsWith("package:")) {
+                    val stockApkPath = line.substring(8).trim()
+                    XposedBridge.log("ReVancedXposed: 'pm path' returned: $stockApkPath")
+                    if (File(stockApkPath).exists()) {
+                        XposedBridge.log("ReVancedXposed SUCCESS: Stock APK found via shell at $stockApkPath")
+                        return File(stockApkPath)
+                    }
+                } else {
+                    XposedBridge.log("ReVancedXposed ERROR: 'pm path' returned nothing or invalid format: $line")
+                }
+            } catch (e: Exception) {
+                XposedBridge.log("ReVancedXposed ERROR in Discovery Step 2: ${e.message}")
             }
         }
         
