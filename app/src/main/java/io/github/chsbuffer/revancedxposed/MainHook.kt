@@ -3,6 +3,8 @@ package io.github.chsbuffer.revancedxposed
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
@@ -89,12 +91,10 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             val prefs = context.getSharedPreferences("spotify_prefs", 0)
             XposedBridge.log("Chimera: Initializing legacy hook chain...")
             
-            /*
             if (isReVancedPatched(lpparam)) {
                 Utils.showToastLong("ReVanced Xposed FE module does not work with patched app")
                 return@inContext
             }
-            */
 
             try {
                 if (prefs.getBoolean("enable_premium", true)) {
@@ -258,11 +258,18 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         @JvmStatic
         fun nativeBootstrap(context: Context) {
             // This is called by libghost.so after fileless memory injection
+            // We use a Handler to avoid blocking the main thread during initialization
+            // and to ensure the Spotify application context is fully stabilized.
             XposedBridge.log("Chimera: Static Native Bootstrap triggered")
             
-            // Critical: Ensure Xposed helpers can find the payload classes
-            // We are already inside the InMemoryDexClassLoader execution context
-            ChimeraEngine.bootstrap(context)
+            Handler(Looper.getMainLooper()).postDelayed({
+                runCatching {
+                    XposedBridge.log("Chimera: Asynchronous Engine Activation...")
+                    ChimeraEngine.bootstrap(context)
+                }.onFailure {
+                    XposedBridge.log("Chimera: Bootstrap failure -> ${it.message}")
+                }
+            }, 100) // Small delay to let Spotify breathe
         }
     }
 }
