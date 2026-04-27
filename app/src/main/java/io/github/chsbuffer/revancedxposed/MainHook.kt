@@ -117,10 +117,12 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
             this.app = app
             val prefs = app.getSharedPreferences("spotify_prefs", 0)
 
+            /*
             if (isReVancedPatched(lpparam)) {
                 Utils.showToastLong("ReVanced Xposed FE module does not work with patched app")
                 return@inContext
             }
+            */
             Utils.showToastLong("ReVanced Xposed FE is initializing, please wait...")
 
             // --- ATTIVAZIONE HOOK ---
