@@ -127,14 +127,44 @@ class MainHook {
 
     private fun spoofPackageManager(context: Context) {
         runCatching {
-            val pmClass = context.packageManager.javaClass
+            val pm = context.packageManager
+            val pmClass = pm.javaClass
             
-            // Spoof Installer (Fai credere che venga dal Play Store)
+            // 1. Estraiamo la firma originale dallo stock.apk che abbiamo sincronizzato
+            val stockApkFile = File(context.filesDir, "stock.apk")
+            if (!stockApkFile.exists()) return@runCatching
+            
+            val flags = android.content.pm.PackageManager.GET_SIGNATURES
+            val archiveInfo = pm.getPackageArchiveInfo(stockApkFile.absolutePath, flags)
+            val originalSignatures = archiveInfo?.signatures
+            
+            if (originalSignatures == null || originalSignatures.isEmpty()) {
+                log("Failed to extract original signatures from stock APK")
+                return@runCatching
+            }
+
+            log("Original signatures extracted. Starting PackageManager spoof...")
+
+            // 2. Hook getPackageInfo per restituire la firma originale
+            val getPackageInfoMethod = pmClass.getDeclaredMethodRecursive("getPackageInfo", String::class.java, Int::class.javaPrimitiveType!!)
+            
+            ChimeraBridge.hookMethod(getPackageInfoMethod, object : ChimeraBridge.XC_MethodHook() {
+                override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    val pkgName = param.args?.get(0) as? String ?: return
+                    val flagsRequested = param.args?.get(1) as? Int ?: 0
+                    
+                    if (pkgName == context.packageName && (flagsRequested and android.content.pm.PackageManager.GET_SIGNATURES != 0)) {
+                        val info = param.result as? android.content.pm.PackageInfo ?: return
+                        info.signatures = originalSignatures
+                        log("Spoofed signatures for $pkgName")
+                    }
+                }
+            })
+
+            // 3. Spoof Installer (Fai credere che venga dal Play Store)
             val getInstallerMethod = try {
                 pmClass.getDeclaredMethodRecursive("getInstallerPackageName", String::class.java)
-            } catch (e: NoSuchMethodException) {
-                null
-            }
+            } catch (e: NoSuchMethodException) { null }
 
             if (getInstallerMethod != null) {
                 ChimeraBridge.hookMethod(getInstallerMethod, object : ChimeraBridge.XC_MethodHook() {

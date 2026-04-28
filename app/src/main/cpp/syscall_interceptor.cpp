@@ -13,6 +13,9 @@
 static char stock_path[512] = "";
 
 // Original function pointers
+typedef int (*open_t)(const char*, int, mode_t);
+static open_t orig_open = nullptr;
+
 typedef int (*openat_t)(int, const char*, int, mode_t);
 static openat_t orig_openat = nullptr;
 
@@ -35,6 +38,14 @@ bool is_target(const char* path) {
 }
 
 // Interceptors
+int my_open(const char* pathname, int flags, mode_t mode) {
+    if (is_target(pathname) && strlen(stock_path) > 0) {
+        LOGI("Ghost: Redirecting open -> %s", stock_path);
+        return orig_open(stock_path, flags, mode);
+    }
+    return orig_open(pathname, flags, mode);
+}
+
 int my_openat(int dirfd, const char* pathname, int flags, mode_t mode) {
     if (is_target(pathname) && strlen(stock_path) > 0) {
         LOGI("Ghost: Redirecting openat -> %s", stock_path);
@@ -91,6 +102,9 @@ void install_syscall_hooks() {
 
     void* libc = dlopen("libc.so", RTLD_LAZY);
     if (libc) {
+        void* open_addr = dlsym(libc, "open");
+        if (open_addr) DobbyHook(open_addr, (dobby_dummy_func_t)my_open, (dobby_dummy_func_t*)&orig_open);
+
         void* openat_addr = dlsym(libc, "openat");
         if (openat_addr) DobbyHook(openat_addr, (dobby_dummy_func_t)my_openat, (dobby_dummy_func_t*)&orig_openat);
 
