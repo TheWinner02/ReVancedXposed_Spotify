@@ -32,12 +32,8 @@ class MainHook {
 
         // --- PHASE 1: NATIVE GHOST SHIELD ---
         if (context.packageName == "com.spotify.music") {
-            try {
-                System.loadLibrary("crashlytics")
-                log("Native Ghost Shield active (via crashlytics proxy)")
-            } catch (e: Throwable) {
-                log("Failed to load native shield: ${e.message}")
-            }
+            // La libreria "crashlytics" (ghost) è già caricata via Smali in SpotifyApplication
+            log("Native Ghost Shield assumed active (via Smali bootstrap)")
         }
 
         // --- PHASE 2: LEGACY HOOK PREPARATION ---
@@ -109,17 +105,48 @@ class MainHook {
             val secureClass = "android.provider.Settings\$Secure".findClass(context.classLoader)
             val getStringMethod = secureClass.getDeclaredMethodRecursive("getString", android.content.ContentResolver::class.java, String::class.java)
             
+            // Generiamo un ID basato sul package name per coerenza
+            val pseudoId = context.packageName.hashCode().toLong().toString(16).padStart(16, 'a')
+
             ChimeraBridge.hookMethod(getStringMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     if (param.args?.get(1) == Settings.Secure.ANDROID_ID) {
-                        param.setResult("8888888888888888")
-                        log("Spoofed ANDROID_ID via ChimeraBridge")
+                        param.setResult(pseudoId)
+                        log("Spoofed ANDROID_ID ($pseudoId) via ChimeraBridge")
                     }
                 }
             })
+
+            // AGGIUNTO: Spoof Installer e Signature
+            spoofPackageManager(context)
+            
         } catch (e: Throwable) {
-            log("Failed to bypass Android ID: ${e.message}")
+            log("Failed to bypass identity restrictions: ${e.message}")
         }
+    }
+
+    private fun spoofPackageManager(context: Context) {
+        runCatching {
+            val pmClass = context.packageManager.javaClass
+            
+            // Spoof Installer (Fai credere che venga dal Play Store)
+            val getInstallerMethod = try {
+                pmClass.getDeclaredMethodRecursive("getInstallerPackageName", String::class.java)
+            } catch (e: NoSuchMethodException) {
+                null
+            }
+
+            if (getInstallerMethod != null) {
+                ChimeraBridge.hookMethod(getInstallerMethod, object : ChimeraBridge.XC_MethodHook() {
+                    override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                        val pkgName = param.args?.get(0) as? String
+                        if (pkgName == context.packageName) {
+                            param.setResult("com.android.vending")
+                        }
+                    }
+                })
+            }
+        }.onFailure { log("PackageManager spoof failed: ${it.message}") }
     }
 
     private fun hideXposedFromStackTrace() {

@@ -15,7 +15,7 @@ class SpotifyHook(app: Application) : BaseHook(app) {
         ::Extension,
         ::SanitizeSharingLinks,
         ::UnlockPremium,
-        ::LogOutPatch,
+        //::LogOutPatch,
         ::FixThirdPartyLaunchersWidgets,
         //::NHB
     )
