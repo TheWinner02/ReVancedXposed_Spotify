@@ -1,8 +1,6 @@
 package io.github.chsbuffer.revancedxposed.spotify
 
-import io.github.chsbuffer.revancedxposed.ChimeraBridge
-import de.robv.android.xposed.XposedHelpers
-import java.lang.reflect.Method
+import io.github.chsbuffer.revancedxposed.*
 
 class AdBlockHook(private val classLoader: ClassLoader) {
 
@@ -18,7 +16,7 @@ class AdBlockHook(private val classLoader: ClassLoader) {
             ChimeraBridge.hookMethod(getMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     val flag = param.args?.get(0) ?: return
-                    val key = runCatching { XposedHelpers.getObjectField(flag, "identifier") as? String }.getOrNull()
+                    val key = runCatching { flag.getObjectField("identifier") as? String }.getOrNull()
                     if (key == "ads") {
                         param.setResult(false)
                     }
@@ -29,7 +27,7 @@ class AdBlockHook(private val classLoader: ClassLoader) {
 
         runCatching {
             val adsClass = cl.loadClass("com.spotify.adsinternal.adscore.AdsSettings")
-            val isAdsEnabledMethod = adsClass.getDeclaredMethod("isAdsEnabled")
+            val isAdsEnabledMethod = adsClass.getDeclaredMethodRecursive("isAdsEnabled")
             
             ChimeraBridge.hookMethod(isAdsEnabledMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
@@ -41,11 +39,11 @@ class AdBlockHook(private val classLoader: ClassLoader) {
 
         runCatching {
             val countdownView = cl.loadClass("com.spotify.adsinternal.playback.video.CountdownBarView")
-            val onMeasureMethod = countdownView.getDeclaredMethod("onMeasure", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            val onMeasureMethod = countdownView.getDeclaredMethodRecursive("onMeasure", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
             
             ChimeraBridge.hookMethod(onMeasureMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
-                    XposedHelpers.callMethod(param.thisObject, "setMeasuredDimension", 0, 0)
+                    param.thisObject?.callMethod("setMeasuredDimension", 0, 0)
                     param.setResult(null)
                 }
             })

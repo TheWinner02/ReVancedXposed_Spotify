@@ -26,8 +26,6 @@ import java.lang.reflect.Method
 import kotlin.reflect.KFunction0
 import kotlin.reflect.KProperty0
 import kotlin.system.measureTimeMillis
-import de.robv.android.xposed.XposedHelpers
-import de.robv.android.xposed.XposedBridge
 
 private typealias HookFunction = KFunction0<Unit>
 
@@ -44,22 +42,17 @@ interface IHook {
     }
 
     fun DexClass.toClass() = getInstance(classLoader)
+    
     fun DexMethod.toMethod(): Method {
-        var clz = classLoader.loadClass(className)
-        do {
-            return XposedHelpers.findMethodExactIfExists(clz, name, *paramTypeNames.toTypedArray())
-                ?: continue
-        } while (clz.superclass.also { clz = it } != null)
-        throw NoSuchMethodException("Method $this not found")
+        val clz = classLoader.loadClass(className)
+        val paramTypes = paramTypeNames.map { it.findClass(classLoader) }.toTypedArray()
+        return clz.getDeclaredMethodRecursive(name, *paramTypes)
     }
 
     fun DexMethod.toConstructor(): Constructor<*> {
-        var clz = classLoader.loadClass(className)
-        do {
-            return XposedHelpers.findConstructorExactIfExists(clz, *paramTypeNames.toTypedArray())
-                ?: continue
-        } while (clz.superclass.also { clz = it } != null)
-        throw NoSuchMethodException("Method $this not found")
+        val clz = classLoader.loadClass(className)
+        val paramTypes = paramTypeNames.map { it.findClass(classLoader) }.toTypedArray()
+        return clz.getDeclaredConstructor(*paramTypes)
     }
 
     fun DexMethod.toMember(): Member {
@@ -184,7 +177,7 @@ abstract class BaseHook(private val app: Application) : IHook {
         hooks.forEach { hook ->
             if (appliedHooks.contains(hook)) return@forEach
             runCatching(hook).onFailure { err ->
-                XposedBridge.log(err)
+                ChimeraBridge.log(err)
                 failedHooks.add(hook)
             }.onSuccess {
                 appliedHooks.add(hook)
@@ -197,8 +190,8 @@ abstract class BaseHook(private val app: Application) : IHook {
         cache.saveCache()
         val success = failedHooks.isEmpty()
         if (!success) {
-            XposedBridge.log("${app.packageName} version: ${getAppVersion()}")
-            XposedBridge.log("Error while apply following Hooks:\n${failedHooks.joinToString { it.name }}")
+            ChimeraBridge.log("${app.packageName} version: ${getAppVersion()}")
+            ChimeraBridge.log("Error while apply following Hooks:\n${failedHooks.joinToString { it.name }}")
             Utils.showToastLong("Error while apply following Hooks:\n${failedHooks.joinToString { it.name }}")
         }
     }
@@ -206,7 +199,7 @@ abstract class BaseHook(private val app: Application) : IHook {
     private fun logDebugInfo() {
         val success = failedHooks.isEmpty()
         if (DEBUG) {
-            XposedBridge.log("${app.packageName} version: ${getAppVersion()}")
+            ChimeraBridge.log("${app.packageName} version: ${getAppVersion()}")
             if (success) {
                 Utils.showToastLong("apply hooks success")
             }

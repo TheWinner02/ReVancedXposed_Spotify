@@ -2,14 +2,8 @@ package io.github.chsbuffer.revancedxposed.spotify.misc
 
 import app.revanced.extension.shared.Logger
 import app.revanced.extension.spotify.misc.UnlockPremiumPatch
-import io.github.chsbuffer.revancedxposed.ChimeraBridge
-import de.robv.android.xposed.XposedHelpers
-import io.github.chsbuffer.revancedxposed.callMethod
-import io.github.chsbuffer.revancedxposed.findField
-import io.github.chsbuffer.revancedxposed.findFirstFieldByExactType
+import io.github.chsbuffer.revancedxposed.*
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
-import org.luckypray.dexkit.wrap.DexField
-import org.luckypray.dexkit.wrap.DexMethod
 import java.lang.reflect.Field
 
 @Suppress("UNCHECKED_CAST")
@@ -39,6 +33,7 @@ fun SpotifyHook.UnlockPremium() {
         fun safeRemoveStation(field: Field?, obj: Any?) {
             if (field == null || obj == null) return
             runCatching {
+                field.isAccessible = true
                 val value = field.get(obj) as? String ?: return
                 field.set(obj, UnlockPremiumPatch.removeStationString(value))
             }
@@ -47,16 +42,17 @@ fun SpotifyHook.UnlockPremium() {
         override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
             val result = param.result ?: return
             val clazz = result.javaClass
-            safeRemoveStation(clazz.findField("uri"), result)
-            safeRemoveStation(clazz.findField("url"), result)
+            safeRemoveStation(clazz.getDeclaredFieldRecursive("uri"), result)
+            safeRemoveStation(clazz.getDeclaredFieldRecursive("url"), result)
         }
     })
 
     // --- 4. ANTI-SHUFFLE (GOOGLE ASSISTANT) ---
     runCatching {
-        ChimeraBridge.hookMethod(
-            XposedHelpers.findMethodExact("com.spotify.player.model.command.options.AutoValue_PlayerOptionOverrides\$Builder", classLoader, "build"),
-            object : ChimeraBridge.XC_MethodHook() {
+        val builderClass = "com.spotify.player.model.command.options.AutoValue_PlayerOptionOverrides\$Builder".findClass(classLoader)
+        val buildMethod = builderClass.getDeclaredMethodRecursive("build")
+        
+        ChimeraBridge.hookMethod(buildMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     param.thisObject?.callMethod("shufflingContext", false)
                 }
@@ -76,7 +72,10 @@ fun SpotifyHook.UnlockPremium() {
                     val original = param.args?.get(0) as? List<*> ?: return
                     val filtered = original.filter { item ->
                         val vm = item?.callMethod("getViewModel")
-                        vm?.let { isPremiumUpsell.get(it) as? Boolean } != true
+                        vm?.let { 
+                            isPremiumUpsell.isAccessible = true
+                            isPremiumUpsell.get(it) as? Boolean 
+                        } != true
                     }
                     param.args?.set(0, filtered)
                 }
@@ -89,7 +88,9 @@ fun SpotifyHook.UnlockPremium() {
         override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
             val sections = param.result as? MutableList<*> ?: return
             runCatching {
-                sections.javaClass.findFirstFieldByExactType(Boolean::class.java).set(sections, true)
+                val field = sections.javaClass.findFirstFieldByExactType(Boolean::class.java)
+                field.isAccessible = true
+                field.set(sections, true)
                 UnlockPremiumPatch.removeHomeSections(sections)
             }
         }
@@ -99,7 +100,9 @@ fun SpotifyHook.UnlockPremium() {
         override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
             val sections = param.result as? MutableList<*> ?: return
             runCatching {
-                sections.javaClass.findFirstFieldByExactType(Boolean::class.java).set(sections, true)
+                val field = sections.javaClass.findFirstFieldByExactType(Boolean::class.java)
+                field.isAccessible = true
+                field.set(sections, true)
                 UnlockPremiumPatch.removeBrowseSections(sections)
             }
         }
@@ -114,7 +117,8 @@ fun SpotifyHook.UnlockPremium() {
                 val onErrorField = result.javaClass.getDeclaredField("b")
                 onErrorField.isAccessible = true
                 val errorFunc = onErrorField.get(result)
-                val justMethod = Class.forName("io.reactivex.rxjava3.core.Single").getDeclaredMethod("just", Any::class.java)
+                val singleClass = Class.forName("io.reactivex.rxjava3.core.Single", false, result.javaClass.classLoader)
+                val justMethod = singleClass.getDeclaredMethod("just", Any::class.java)
                 param.setResult(justMethod.invoke(null, errorFunc))
             }
         }

@@ -1,14 +1,6 @@
 package io.github.chsbuffer.revancedxposed
 
-import android.content.res.loader.ResourcesLoader
-import android.content.res.loader.ResourcesProvider
-import android.os.Build
-import android.os.ParcelFileDescriptor
-import androidx.annotation.RequiresApi
-import de.robv.android.xposed.IXposedHookZygoteInit
-import io.github.chsbuffer.revancedxposed.ChimeraBridge
 import java.io.File
-import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Member
 
 typealias IScopedHookCallback = ScopedHookParam.(ChimeraBridge.MethodHookParam) -> Unit
@@ -98,7 +90,6 @@ class ScopedHook : ChimeraBridge.XC_MethodHook() {
 }
 
 fun injectHostClassLoaderToSelf(self: ClassLoader, host: ClassLoader) {
-    // Reflection used here should be standard Java reflection
     try {
         val parentField = ClassLoader::class.java.getDeclaredField("parent")
         parentField.isAccessible = true
@@ -121,14 +112,5 @@ fun injectHostClassLoaderToSelf(self: ClassLoader, host: ClassLoader) {
         })
     } catch (e: Exception) {
         ChimeraBridge.log(e)
-    }
-}
-
-@Suppress("UNCHECKED_CAST")
-fun Class<*>.enumValueOf(name: String): Enum<*>? {
-    return try {
-        java.lang.Enum.valueOf(this as Class<out Enum<*>>, name)
-    } catch (_: IllegalArgumentException) {
-        null
     }
 }

@@ -4,8 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Application
 import android.graphics.Color
 import android.view.View
-import io.github.chsbuffer.revancedxposed.ChimeraBridge
-import de.robv.android.xposed.XposedHelpers
+import io.github.chsbuffer.revancedxposed.*
 import androidx.core.graphics.toColorInt
 import kotlin.math.abs
 
@@ -42,111 +41,105 @@ class ThemeHook(app: Application) {
 
     fun hook() {
         // 1. PorterDuffColorFilter
-        runCatching<Unit> {
-            ChimeraBridge.hookMethod(
-                XposedHelpers.findConstructorExact("android.graphics.PorterDuffColorFilter", classLoader, Int::class.javaPrimitiveType, android.graphics.PorterDuff.Mode::class.java),
-                object : ChimeraBridge.XC_MethodHook() {
-                    override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
-                        param.args?.set(0, replaceColorLogic(param.args?.get(0) as Int))
-                    }
+        runCatching {
+            val clazz = "android.graphics.PorterDuffColorFilter".findClass(classLoader)
+            val ctor = clazz.getDeclaredConstructor(Int::class.javaPrimitiveType!!, android.graphics.PorterDuff.Mode::class.java)
+            ChimeraBridge.hookMethod(ctor, object : ChimeraBridge.XC_MethodHook() {
+                override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    param.args?.set(0, replaceColorLogic(param.args?.get(0) as Int))
                 }
-            )
+            })
         }
 
         // 2. ColorStateList
         runCatching {
-            ChimeraBridge.hookMethod(
-                XposedHelpers.findMethodExact("android.content.res.ColorStateList", classLoader, "getColorForState", IntArray::class.java, Int::class.javaPrimitiveType),
-                object : ChimeraBridge.XC_MethodHook() {
-                    override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
-                        val states = param.args?.get(0) as IntArray
-                        val originalColor = param.result as Int
+            val clazz = "android.content.res.ColorStateList".findClass(classLoader)
+            val method = clazz.getDeclaredMethodRecursive("getColorForState", IntArray::class.java, Int::class.javaPrimitiveType!!)
+            ChimeraBridge.hookMethod(method, object : ChimeraBridge.XC_MethodHook() {
+                override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    val states = param.args?.get(0) as IntArray
+                    val originalColor = param.result as Int
 
-                        val isPressed = states.contains(android.R.attr.state_pressed)
-                        val isSelected = states.contains(android.R.attr.state_selected)
-                        val isFocused = states.contains(android.R.attr.state_focused)
+                    val isPressed = states.contains(android.R.attr.state_pressed)
+                    val isSelected = states.contains(android.R.attr.state_selected)
+                    val isFocused = states.contains(android.R.attr.state_focused)
 
-                        param.setResult(when {
-                            isPressed || isFocused -> {
-                                Color.argb(77, Color.red(accentPressed), Color.green(accentPressed), Color.blue(accentPressed))
-                            }
-                            isSelected -> accent
-                            else -> replaceColorLogic(originalColor)
-                        })
-                    }
+                    param.setResult(when {
+                        isPressed || isFocused -> {
+                            Color.argb(77, Color.red(accentPressed), Color.green(accentPressed), Color.blue(accentPressed))
+                        }
+                        isSelected -> accent
+                        else -> replaceColorLogic(originalColor)
+                    })
                 }
-            )
+            })
         }
 
         // 3. Color.parseColor
         runCatching {
-            ChimeraBridge.hookMethod(
-                XposedHelpers.findMethodExact("android.graphics.Color", classLoader, "parseColor", String::class.java),
-                object : ChimeraBridge.XC_MethodHook() {
-                    override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
-                        param.setResult(replaceColorLogic(param.result as Int))
-                    }
+            val clazz = Color::class.java
+            val method = clazz.getDeclaredMethodRecursive("parseColor", String::class.java)
+            ChimeraBridge.hookMethod(method, object : ChimeraBridge.XC_MethodHook() {
+                override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    param.setResult(replaceColorLogic(param.result as Int))
                 }
-            )
+            })
         }
 
         // 4. Paint.setColor
         runCatching {
-            ChimeraBridge.hookMethod(
-                XposedHelpers.findMethodExact("android.graphics.Paint", classLoader, "setColor", Int::class.javaPrimitiveType),
-                object : ChimeraBridge.XC_MethodHook() {
-                    override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
-                        param.args?.set(0, replaceColorLogic(param.args?.get(0) as Int))
-                    }
+            val clazz = android.graphics.Paint::class.java
+            val method = clazz.getDeclaredMethodRecursive("setColor", Int::class.javaPrimitiveType!!)
+            ChimeraBridge.hookMethod(method, object : ChimeraBridge.XC_MethodHook() {
+                override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    param.args?.set(0, replaceColorLogic(param.args?.get(0) as Int))
                 }
-            )
+            })
         }
 
         // 5. Resources.getColor
         runCatching {
-            ChimeraBridge.hookMethod(
-                XposedHelpers.findMethodExact("android.content.res.Resources", classLoader, "getColor", Int::class.javaPrimitiveType, "android.content.res.Resources.Theme"),
-                object : ChimeraBridge.XC_MethodHook() {
-                    override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
-                        param.setResult(replaceColorLogic(param.result as Int))
-                    }
+            val clazz = android.content.res.Resources::class.java
+            val themeClass = "android.content.res.Resources\$Theme".findClass(classLoader)
+            val method = clazz.getDeclaredMethodRecursive("getColor", Int::class.javaPrimitiveType!!, themeClass)
+            ChimeraBridge.hookMethod(method, object : ChimeraBridge.XC_MethodHook() {
+                override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    param.setResult(replaceColorLogic(param.result as Int))
                 }
-            )
+            })
         }
 
         // 6. TypedArray.getColor
         runCatching {
-            ChimeraBridge.hookMethod(
-                XposedHelpers.findMethodExact("android.content.res.TypedArray", classLoader, "getColor", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType),
-                object : ChimeraBridge.XC_MethodHook() {
-                    override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
-                        param.setResult(replaceColorLogic(param.result as Int))
-                    }
+            val clazz = android.content.res.TypedArray::class.java
+            val method = clazz.getDeclaredMethodRecursive("getColor", Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
+            ChimeraBridge.hookMethod(method, object : ChimeraBridge.XC_MethodHook() {
+                override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    param.setResult(replaceColorLogic(param.result as Int))
                 }
-            )
+            })
         }
 
         // 7. View.onAttachedToWindow (Remozione Ombre)
         runCatching {
-            ChimeraBridge.hookMethod(
-                XposedHelpers.findMethodExact("android.view.View", classLoader, "onAttachedToWindow"),
-                object : ChimeraBridge.XC_MethodHook() {
-                    override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
-                        val view = param.thisObject as View
-                        val resName = try { view.resources.getResourceEntryName(view.id).lowercase() } catch (_: Exception) { "" }
-                        val isShadowOrFade = resName.contains("shadow") || resName.contains("fade") || resName.contains("gradient")
-                        if (isShadowOrFade && view.javaClass.name == "android.view.View") {
-                            view.visibility = View.GONE
-                            view.layoutParams.width = 0
-                            view.layoutParams.height = 0
-                        }
-                        if (view.javaClass.name.contains("RecyclerView")) {
-                            view.isHorizontalFadingEdgeEnabled = false
-                            view.isVerticalFadingEdgeEnabled = false
-                        }
+            val clazz = View::class.java
+            val method = clazz.getDeclaredMethodRecursive("onAttachedToWindow")
+            ChimeraBridge.hookMethod(method, object : ChimeraBridge.XC_MethodHook() {
+                override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    val view = param.thisObject as View
+                    val resName = try { view.resources.getResourceEntryName(view.id).lowercase() } catch (_: Exception) { "" }
+                    val isShadowOrFade = resName.contains("shadow") || resName.contains("fade") || resName.contains("gradient")
+                    if (isShadowOrFade && view.javaClass.name == "android.view.View") {
+                        view.visibility = View.GONE
+                        view.layoutParams.width = 0
+                        view.layoutParams.height = 0
+                    }
+                    if (view.javaClass.name.contains("RecyclerView")) {
+                        view.setObjectField("mHorizontalFadingEdgeEnabled", false)
+                        view.setObjectField("mVerticalFadingEdgeEnabled", false)
                     }
                 }
-            )
+            })
         }
     }
 

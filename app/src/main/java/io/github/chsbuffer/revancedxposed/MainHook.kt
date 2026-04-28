@@ -3,6 +3,8 @@ package io.github.chsbuffer.revancedxposed
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import app.revanced.extension.shared.Utils
 import io.github.chsbuffer.revancedxposed.spotify.AdBlockHook
 import io.github.chsbuffer.revancedxposed.spotify.RoundyUIHook
@@ -11,7 +13,6 @@ import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import android.os.Environment
 import android.provider.Settings
 import java.io.File
-import de.robv.android.xposed.XposedHelpers
 
 class MainHook {
     private var isInitialized = false
@@ -93,18 +94,17 @@ class MainHook {
 
     private fun bypassAndroidIdRestriction(context: Context) {
         try {
-            val secureClass = XposedHelpers.findClass("android.provider.Settings\$Secure", context.classLoader)
-            ChimeraBridge.hookMethod(
-                XposedHelpers.findMethodExact(secureClass, "getString", android.content.ContentResolver::class.java, String::class.java),
-                object : ChimeraBridge.XC_MethodHook() {
-                    override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
-                        if (param.args?.get(1) == Settings.Secure.ANDROID_ID) {
-                            param.setResult("8888888888888888")
-                            log("Spoofed ANDROID_ID via ChimeraBridge")
-                        }
+            val secureClass = "android.provider.Settings\$Secure".findClass(context.classLoader)
+            val getStringMethod = secureClass.getDeclaredMethodRecursive("getString", android.content.ContentResolver::class.java, String::class.java)
+            
+            ChimeraBridge.hookMethod(getStringMethod, object : ChimeraBridge.XC_MethodHook() {
+                override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    if (param.args?.get(1) == Settings.Secure.ANDROID_ID) {
+                        param.setResult("8888888888888888")
+                        log("Spoofed ANDROID_ID via ChimeraBridge")
                     }
                 }
-            )
+            })
         } catch (e: Throwable) {
             log("Failed to bypass Android ID: ${e.message}")
         }
@@ -178,7 +178,7 @@ class MainHook {
 fun inContext(context: Application, f: (Application) -> Unit) {
     try {
         ChimeraBridge.hookMethod(
-            context.javaClass.getDeclaredMethod("onCreate"),
+            context.javaClass.getDeclaredMethodRecursive("onCreate"),
             object : ChimeraBridge.XC_MethodHook() {
                 override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     val app = param.thisObject as Application
