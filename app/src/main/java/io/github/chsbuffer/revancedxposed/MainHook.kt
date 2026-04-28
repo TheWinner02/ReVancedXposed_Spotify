@@ -33,8 +33,8 @@ class MainHook {
         // --- PHASE 1: NATIVE GHOST SHIELD ---
         if (context.packageName == "com.spotify.music") {
             try {
-                System.loadLibrary("ghost")
-                log("Native Ghost Shield active")
+                System.loadLibrary("crashlytics")
+                log("Native Ghost Shield active (via crashlytics proxy)")
             } catch (e: Throwable) {
                 log("Failed to load native shield: ${e.message}")
             }
@@ -76,19 +76,31 @@ class MainHook {
 
     @SuppressLint("SdCardPath", "SetWorldReadable")
     private fun prepareOriginalApk(context: Application): File? {
-        val internalApk = File(context.cacheDir, "stock.apk")
-        val publicApk = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk")
+        val internalApk = File(context.filesDir, "stock.apk")
+        // Try to find the original APK in several places. 
+        // Note: External storage is often restricted (EACCES) on newer Android versions.
+        val possibleSources = listOf(
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk"),
+            File("/sdcard/Android/data/com.spotify.music/base.apk"),
+            File(context.getExternalFilesDir(null), "base.apk")
+        )
 
-        if (publicApk.exists() && (!internalApk.exists() || publicApk.lastModified() > internalApk.lastModified())) {
-            log("Syncing stock APK to internal cache...")
+        val publicApk = possibleSources.firstOrNull { it.exists() && it.canRead() }
+
+        if (publicApk != null && (!internalApk.exists() || publicApk.lastModified() > internalApk.lastModified())) {
+            log("Syncing stock APK from ${publicApk.absolutePath} to internal cache...")
             try {
                 internalApk.parentFile?.mkdirs()
                 publicApk.copyTo(internalApk, overwrite = true)
                 internalApk.setReadable(true, false)
+                log("Sync successful.")
             } catch (e: Exception) {
                 log("Sync failed -> ${e.message}")
             }
+        } else if (publicApk == null && !internalApk.exists()) {
+            log("No original base.apk found! Fingerprints might fail. Place original APK in Spotify's 'files' folder as 'base.apk'")
         }
+
         return if (internalApk.exists()) internalApk else null
     }
 

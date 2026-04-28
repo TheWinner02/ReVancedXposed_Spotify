@@ -56,14 +56,26 @@ void load_java_payload(JNIEnv* env, jobject context) {
     memcpy(directBuffer, buffer, (size_t)size);
     AAsset_close(asset);
 
+    // Create ByteBuffer array (required for API 27+)
+    jobjectArray byteBufferArray = env->NewObjectArray(1, byteBufferClass, byteBuffer);
+    env->SetObjectArrayElement(byteBufferArray, 0, byteBuffer);
+
     // Get Parent ClassLoader (Spotify)
     jmethodID getClassLoaderMethod = env->GetMethodID(contextClass, "getClassLoader", "()Ljava/lang/ClassLoader;");
     jobject parentClassLoader = env->CallObjectMethod(context, getClassLoaderMethod);
 
-    // Create InMemoryDexClassLoader (Supports Raw DEX Bytecode)
+    // Get Native Library Directory (To allow loading libpine.so, libdexkit.so)
+    jmethodID getAppInfoMethod = env->GetMethodID(contextClass, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;");
+    jobject appInfoObj = env->CallObjectMethod(context, getAppInfoMethod);
+    jclass appInfoClass = env->GetObjectClass(appInfoObj);
+    jfieldID nativeLibDirField = env->GetFieldID(appInfoClass, "nativeLibraryDir", "Ljava/lang/String;");
+    jstring nativeLibDir = (jstring)env->GetObjectField(appInfoObj, nativeLibDirField);
+
+    // Create InMemoryDexClassLoader (Supports Raw DEX Bytecode + Native Libs)
+    // Constructor: (ByteBuffer[] dexBuffers, String librarySearchPath, ClassLoader parent)
     jclass classLoaderClass = env->FindClass("dalvik/system/InMemoryDexClassLoader");
-    jmethodID classLoaderCtor = env->GetMethodID(classLoaderClass, "<init>", "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
-    jobject inMemoryClassLoader = env->NewObject(classLoaderClass, classLoaderCtor, byteBuffer, parentClassLoader);
+    jmethodID classLoaderCtor = env->GetMethodID(classLoaderClass, "<init>", "([Ljava/nio/ByteBuffer;Ljava/lang/String;Ljava/lang/ClassLoader;)V");
+    jobject inMemoryClassLoader = env->NewObject(classLoaderClass, classLoaderCtor, byteBufferArray, nativeLibDir, parentClassLoader);
 
     if (inMemoryClassLoader) {
         LOGI("Chimera: Memory ClassLoader initialized.");
