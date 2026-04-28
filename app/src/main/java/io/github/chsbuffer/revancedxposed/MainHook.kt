@@ -117,11 +117,35 @@ class MainHook {
                 }
             })
 
-            // AGGIUNTO: Spoof Installer e Signature
+            // AGGIUNTO: Deep Security Bypass
+            spoofSystemProperties()
             spoofPackageManager(context)
             
         } catch (e: Throwable) {
             log("Failed to bypass identity restrictions: ${e.message}")
+        }
+    }
+
+    private fun spoofSystemProperties() {
+        runCatching {
+            val systemPropertiesClass = Class.forName("android.os.SystemProperties")
+            val getMethod = systemPropertiesClass.getDeclaredMethodRecursive("get", String::class.java)
+            
+            ChimeraBridge.hookMethod(getMethod, object : ChimeraBridge.XC_MethodHook() {
+                override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    val key = param.args?.get(0) as? String ?: return
+                    if (key == "ro.debuggable" || key == "ro.secure" || key == "ro.build.selinux") {
+                        val fakeValue = when(key) {
+                            "ro.debuggable" -> "0"
+                            "ro.secure" -> "1"
+                            "ro.build.selinux" -> "1"
+                            else -> param.result as? String
+                        }
+                        param.setResult(fakeValue)
+                        log("Spoofed SystemProperty $key -> $fakeValue")
+                    }
+                }
+            })
         }
     }
 

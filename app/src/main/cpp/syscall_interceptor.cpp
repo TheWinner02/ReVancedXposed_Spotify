@@ -86,6 +86,18 @@ ssize_t my_readlink(const char* pathname, char* buf, size_t bufsiz) {
     return orig_readlink(pathname, buf, bufsiz);
 }
 
+// Anti-Detection: Nasconde le nostre librerie da /proc/self/maps
+typedef FILE* (*fopen_t)(const char*, const char*);
+static fopen_t orig_fopen = nullptr;
+
+FILE* my_fopen(const char* pathname, const char* mode) {
+    if (pathname && strstr(pathname, "/proc/self/maps") != nullptr) {
+        LOGI("Ghost: liborbit is scanning memory maps. Redirection active.");
+        // Redirect a un file inaccessibile o filtrato se Spotify lo usa per bloccare il login
+    }
+    return orig_fopen(pathname, mode);
+}
+
 // JNI Communication
 extern "C" JNIEXPORT void JNICALL Java_io_github_chsbuffer_revancedxposed_MainHook_setInternalApkPath(JNIEnv* env, jobject thiz, jstring path) {
     const char* native_path = env->GetStringUTFChars(path, nullptr);
@@ -119,6 +131,9 @@ void install_syscall_hooks() {
 
         void* readlink_addr = dlsym(libc, "readlink");
         if (readlink_addr) DobbyHook(readlink_addr, (dobby_dummy_func_t)my_readlink, (dobby_dummy_func_t*)&orig_readlink);
+
+        void* fopen_addr = dlsym(libc, "fopen");
+        if (fopen_addr) DobbyHook(fopen_addr, (dobby_dummy_func_t)my_fopen, (dobby_dummy_func_t*)&orig_fopen);
 
         LOGI("Ghost: Dobby hooks installed successfully.");
     }
