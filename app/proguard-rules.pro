@@ -3,8 +3,16 @@
 # Impediamo a R8 di rinominare o eliminare il punto di ingresso
 -keep class io.github.chsbuffer.revancedxposed.MainHook {
     public static void nativeBootstrap(android.content.Context);
+    private static boolean isBootstrapped;
+    public void handleLoadPackage(de.robv.android.xposed.callbacks.XC_LoadPackage$LoadPackageParam);
 }
 -keepnames class io.github.chsbuffer.revancedxposed.MainHook
+
+# Mantieni i log per il debug nativo
+-keepclassmembers class io.github.chsbuffer.revancedxposed.MainHook$Companion {
+    public void log(java.lang.String);
+    public void log(java.lang.Throwable);
+}
 
 # Protezione totale per il motore Chimera e i suoi componenti
 -keep class io.github.chsbuffer.revancedxposed.ChimeraEngine { *; }
