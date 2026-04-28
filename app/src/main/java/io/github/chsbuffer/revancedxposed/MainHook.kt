@@ -125,46 +125,58 @@ class MainHook {
         }
     }
 
+    @SuppressLint("PrivateApi")
     private fun spoofPackageManager(context: Context) {
         runCatching {
             val pm = context.packageManager
-            val pmClass = pm.javaClass
+            // Hookiamo direttamente la classe di implementazione del PackageManager
+            val pmClass = Class.forName("android.app.ApplicationPackageManager")
             
-            // 1. Estraiamo la firma originale dallo stock.apk che abbiamo sincronizzato
             val stockApkFile = File(context.filesDir, "stock.apk")
             if (!stockApkFile.exists()) return@runCatching
             
-            val flags = android.content.pm.PackageManager.GET_SIGNATURES
+            // Estraiamo le firme originali (vecchio e nuovo metodo)
+            val flags = android.content.pm.PackageManager.GET_SIGNATURES or
+                        (if (android.os.Build.VERSION.SDK_INT >= 28) android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES else 0)
+            
             val archiveInfo = pm.getPackageArchiveInfo(stockApkFile.absolutePath, flags)
             val originalSignatures = archiveInfo?.signatures
+            val originalSigningInfo = if (android.os.Build.VERSION.SDK_INT >= 28) archiveInfo?.signingInfo else null
             
-            if (originalSignatures == null || originalSignatures.isEmpty()) {
-                log("Failed to extract original signatures from stock APK")
+            if (originalSignatures == null && originalSigningInfo == null) {
+                log("Failed to extract original signatures/signingInfo")
                 return@runCatching
             }
 
-            log("Original signatures extracted. Starting PackageManager spoof...")
+            log("Original signatures extracted. Applying deep PackageManager spoof...")
 
-            // 2. Hook getPackageInfo per restituire la firma originale
             val getPackageInfoMethod = pmClass.getDeclaredMethodRecursive("getPackageInfo", String::class.java, Int::class.javaPrimitiveType!!)
             
             ChimeraBridge.hookMethod(getPackageInfoMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     val pkgName = param.args?.get(0) as? String ?: return
-                    val flagsRequested = param.args?.get(1) as? Int ?: 0
-                    
-                    if (pkgName == context.packageName && (flagsRequested and android.content.pm.PackageManager.GET_SIGNATURES != 0)) {
+                    if (pkgName == context.packageName) {
                         val info = param.result as? android.content.pm.PackageInfo ?: return
-                        info.signatures = originalSignatures
-                        log("Spoofed signatures for $pkgName")
+                        
+                        // Spoof Firme (Legacy)
+                        if (originalSignatures != null) {
+                            info.signatures = originalSignatures
+                        }
+                        
+                        // Spoof SigningInfo (Modern API 28+)
+                        if (android.os.Build.VERSION.SDK_INT >= 28 && originalSigningInfo != null) {
+                            info.signingInfo = originalSigningInfo
+                        }
+                        
+                        log("Deep Spoofed signatures/signingInfo for $pkgName")
                     }
                 }
             })
 
-            // 3. Spoof Installer (Fai credere che venga dal Play Store)
+            // Spoof Installer (Fai credere che venga dal Play Store)
             val getInstallerMethod = try {
                 pmClass.getDeclaredMethodRecursive("getInstallerPackageName", String::class.java)
-            } catch (e: NoSuchMethodException) { null }
+            } catch (e: Exception) { null }
 
             if (getInstallerMethod != null) {
                 ChimeraBridge.hookMethod(getInstallerMethod, object : ChimeraBridge.XC_MethodHook() {
@@ -176,7 +188,7 @@ class MainHook {
                     }
                 })
             }
-        }.onFailure { log("PackageManager spoof failed: ${it.message}") }
+        }.onFailure { log("Deep PackageManager spoof failed: ${it.message}") }
     }
 
     private fun hideXposedFromStackTrace() {
