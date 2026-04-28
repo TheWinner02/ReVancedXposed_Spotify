@@ -39,11 +39,19 @@ class AdBlockHook(private val classLoader: ClassLoader) {
 
         runCatching {
             val countdownView = cl.loadClass("com.spotify.adsinternal.playback.video.CountdownBarView")
-            val onMeasureMethod = countdownView.getDeclaredMethodRecursive("onMeasure", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            val onMeasureMethod = countdownView.getDeclaredMethodRecursive(
+                "onMeasure",
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!
+            )
             
             ChimeraBridge.hookMethod(onMeasureMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
-                    param.thisObject?.callMethod("setMeasuredDimension", 0, 0)
+                    param.thisObject?.callMethod(
+                        "setMeasuredDimension",
+                        arrayOf(Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!),
+                        0, 0
+                    )
                     param.setResult(null)
                 }
             })
