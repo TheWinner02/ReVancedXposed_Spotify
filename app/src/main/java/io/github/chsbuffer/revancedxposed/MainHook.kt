@@ -81,7 +81,7 @@ class MainHook {
         // Note: External storage is often restricted (EACCES) on newer Android versions.
         val possibleSources = listOf(
             File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk"),
-            File("/sdcard/Android/data/com.spotify.music/base.apk"),
+            File("/sdcard/Android/media/com.spotify.music/base.apk"),
             File(context.getExternalFilesDir(null), "base.apk")
         )
 
