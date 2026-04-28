@@ -16,7 +16,7 @@
 
 #define ORIGINAL_LIB_NAME "libcrashlytics_orig.so"
 #define PAYLOAD_ASSET_NAME "settings.bin"
-#define BOOTSTRAP_CLASS "io.github.chsbuffer.revancedxposed.MainHook"
+#define BOOTSTRAP_CLASS "io.github.chsbuffer.revancedxposed.ChimeraEngine"
 
 // External declarations
 void install_syscall_hooks();
@@ -76,7 +76,7 @@ void load_java_payload(JNIEnv* env, jobject context) {
 
         if (env->ExceptionCheck()) {
             env->ExceptionClear();
-            LOGE("Chimera: MainHook resolution failed. Verify if settings.bin is a valid RAW DEX file.");
+            LOGE("Chimera: Bootstrap class resolution failed: %s", BOOTSTRAP_CLASS);
             return;
         }
 

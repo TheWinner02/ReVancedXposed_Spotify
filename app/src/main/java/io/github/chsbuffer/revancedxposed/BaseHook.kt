@@ -5,10 +5,6 @@ import android.app.Application
 import android.os.Build
 import app.revanced.extension.shared.Logger
 import app.revanced.extension.shared.Utils
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
-import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
 import io.github.chsbuffer.revancedxposed.BuildConfig.DEBUG
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
@@ -30,6 +26,8 @@ import java.lang.reflect.Method
 import kotlin.reflect.KFunction0
 import kotlin.reflect.KProperty0
 import kotlin.system.measureTimeMillis
+import de.robv.android.xposed.XposedHelpers
+import de.robv.android.xposed.XposedBridge
 
 private typealias HookFunction = KFunction0<Unit>
 
@@ -37,8 +35,8 @@ interface IHook {
     val classLoader: ClassLoader
     fun Hook()
 
-    fun DexMethod.hookMethod(callback: XC_MethodHook) {
-        XposedBridge.hookMethod(toMember(), callback)
+    fun DexMethod.hookMethod(callback: ChimeraBridge.XC_MethodHook) {
+        ChimeraBridge.hookMethod(toMember(), callback)
     }
 
     fun DexMethod.hookMethod(block: HookDsl<IHookCallback>.() -> Unit) {
@@ -133,8 +131,8 @@ class DependedHookFailedException(
 ) : Exception("Depended hook $subHookName failed.", exception)
 
 @SuppressLint("CommitPrefEdits")
-abstract class BaseHook(private val app: Application, val lpparam: LoadPackageParam) : IHook {
-    override val classLoader = lpparam.classLoader!!
+abstract class BaseHook(private val app: Application) : IHook {
+    override val classLoader = app.classLoader!!
 
     // hooks
     abstract val hooks: Array<HookFunction>
@@ -147,7 +145,7 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
     private var dexkit = run {
         System.loadLibrary("dexkit")
         DexKitCacheBridge.init(cache)
-        DexKitCacheBridge.create("", lpparam.appInfo.sourceDir)
+        DexKitCacheBridge.create("", app.applicationInfo.sourceDir)
     }
 
     override fun Hook() {
@@ -159,7 +157,7 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
                 logDebugInfo()
             }
         }
-        Logger.printDebug { "${lpparam.packageName} handleLoadPackage: ${t}ms" }
+        Logger.printDebug { "${app.packageName} handleStandalone: ${t}ms" }
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -199,7 +197,7 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
         cache.saveCache()
         val success = failedHooks.isEmpty()
         if (!success) {
-            XposedBridge.log("${lpparam.appInfo.packageName} version: ${getAppVersion()}")
+            XposedBridge.log("${app.packageName} version: ${getAppVersion()}")
             XposedBridge.log("Error while apply following Hooks:\n${failedHooks.joinToString { it.name }}")
             Utils.showToastLong("Error while apply following Hooks:\n${failedHooks.joinToString { it.name }}")
         }
@@ -208,7 +206,7 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
     private fun logDebugInfo() {
         val success = failedHooks.isEmpty()
         if (DEBUG) {
-            XposedBridge.log("${lpparam.appInfo.packageName} version: ${getAppVersion()}")
+            XposedBridge.log("${app.packageName} version: ${getAppVersion()}")
             if (success) {
                 Utils.showToastLong("apply hooks success")
             }
@@ -241,7 +239,7 @@ abstract class BaseHook(private val app: Application, val lpparam: LoadPackagePa
         getDexMethod(this.name, this.get()).hookMethod(block)
     }
 
-    fun KProperty0<FindMethodFunc>.hookMethod(callback: XC_MethodHook) {
+    fun KProperty0<FindMethodFunc>.hookMethod(callback: ChimeraBridge.XC_MethodHook) {
         getDexMethod(this.name, this.get()).hookMethod(callback)
     }
 

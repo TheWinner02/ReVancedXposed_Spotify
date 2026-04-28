@@ -8,12 +8,12 @@ plugins {
 }
 
 val gitCommitHashProvider = providers.exec {
-    commandLine("git", "rev-parse", "--short", "HEAD")
+    commandLine("wsl", "git", "rev-parse", "--short", "HEAD")
     workingDir = rootProject.rootDir
 }.standardOutput.asText!!
 
 val gitCommitDateProvider = providers.exec {
-    commandLine("git log -1 --format=%cd --date=format:%y%m%d".split(' '))
+    commandLine("wsl git log -1 --format=%cd --date=format:%y%m%d".split(' '))
     workingDir = rootProject.rootDir
 }.standardOutput.asText!!
 
@@ -124,8 +124,9 @@ dependencies {
     implementation(libs.annotation)
     implementation(libs.kotlinx.serialization.protobuf)
     implementation(libs.material)
+    implementation(libs.pine)
     
-    // For standalone Chimera injection, we bundle Xposed APIs
+    // For standalone reflection utilities (not bundled)
     compileOnly(libs.xposed)
     
     testImplementation(kotlin("test-junit5"))

@@ -1,12 +1,22 @@
 # --- CHIMERA STEALH ARCHITECTURE RULES ---
 
-# Impediamo a R8 di rinominare o eliminare il punto di ingresso
--keep class io.github.chsbuffer.revancedxposed.MainHook {
+# Impediamo a R8 di rinominare o eliminare il punto di ingresso (Standalone)
+-keep class io.github.chsbuffer.revancedxposed.ChimeraEngine {
     public static void nativeBootstrap(android.content.Context);
-    private static boolean isBootstrapped;
-    public void handleLoadPackage(de.robv.android.xposed.callbacks.XC_LoadPackage$LoadPackageParam);
+    public void bootstrap(android.app.Application);
+}
+
+# Mantieni MainHook per compatibilità e istanza
+-keep class io.github.chsbuffer.revancedxposed.MainHook {
+    public void handleStandalone(android.app.Application);
+    public static io.github.chsbuffer.revancedxposed.MainHook instance;
 }
 -keepnames class io.github.chsbuffer.revancedxposed.MainHook
+
+# Mantieni il Bridge e Pine
+-keep class io.github.chsbuffer.revancedxposed.ChimeraBridge { *; }
+-keep class top.canyie.pine.** { *; }
+-dontwarn top.canyie.pine.**
 
 # Mantieni i log per il debug nativo
 -keepclassmembers class io.github.chsbuffer.revancedxposed.MainHook$Companion {

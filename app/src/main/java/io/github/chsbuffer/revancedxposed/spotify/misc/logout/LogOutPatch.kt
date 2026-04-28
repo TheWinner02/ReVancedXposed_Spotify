@@ -1,8 +1,7 @@
 package io.github.chsbuffer.revancedxposed.spotify.misc.logout
 
 import android.util.Log
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
+import io.github.chsbuffer.revancedxposed.ChimeraBridge
 import de.robv.android.xposed.XposedHelpers
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import java.lang.reflect.Method
@@ -17,7 +16,6 @@ private object AuthCache {
 fun SpotifyHook.LogOutPatch() {
     val cl = classLoader
 
-    // --- HELPER PER REFLECTION SICURA ---
     fun findMethodSafe(clazz: Class<*>, name: String, vararg params: Class<*>): Method? {
         return runCatching { clazz.getDeclaredMethod(name, *params).apply { isAccessible = true } }.getOrNull()
             ?: runCatching { clazz.methods.firstOrNull { it.name == name && it.parameterTypes.size == params.size }?.apply { isAccessible = true } }.getOrNull()
@@ -25,9 +23,9 @@ fun SpotifyHook.LogOutPatch() {
 
     // --- LAYER 1 & 2: Network Interceptor (OkHttp3) ---
     try {
-        val chainClass = runCatching { Class.forName($$"okhttp3.Interceptor$Chain", false, cl) }.getOrNull() ?: return
+        val chainClass = runCatching { Class.forName("okhttp3.Interceptor\$Chain", false, cl) }.getOrNull() ?: return
         val reqClass = Class.forName("okhttp3.Request", false, cl)
-        val builderClass = Class.forName($$"okhttp3.Response$Builder", false, cl)
+        val builderClass = Class.forName("okhttp3.Response\$Builder", false, cl)
         val bodyClass = Class.forName("okhttp3.ResponseBody", false, cl)
         val mtClass = Class.forName("okhttp3.MediaType", false, cl)
 
@@ -35,15 +33,14 @@ fun SpotifyHook.LogOutPatch() {
             it.name == "proceed" && it.parameterTypes.size == 1 && it.parameterTypes[0] == reqClass
         } ?: return
 
-        XposedBridge.hookMethod(proceedMethod, object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
+        ChimeraBridge.hookMethod(proceedMethod, object : ChimeraBridge.XC_MethodHook() {
+            override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
                 try {
-                    val req = param.args[0] ?: return
+                    val req = param.args?.get(0) ?: return
                     val url = findMethodSafe(req.javaClass, "url")?.invoke(req) ?: return
                     val host = findMethodSafe(url.javaClass, "host")?.invoke(url) as? String ?: ""
                     val path = findMethodSafe(url.javaClass, "encodedPath")?.invoke(url) as? String ?: ""
 
-                    // LAYER 2: Block detection/sync paths (spclient)
                     val isDetection = path.contains("dual-sync") ||
                             path.contains("social-connect") ||
                             path.contains("melody/v1/check")
@@ -63,12 +60,12 @@ fun SpotifyHook.LogOutPatch() {
                         val emptyBody = findMethodSafe(bodyClass, "create", mtClass, String::class.java)?.invoke(null, null, "")
                         findMethodSafe(builderClass, "body", bodyClass)?.invoke(builder, emptyBody)
 
-                        param.result = findMethodSafe(builderClass, "build")?.invoke(builder)
+                        param.setResult(findMethodSafe(builderClass, "build")?.invoke(builder))
                     }
-                } catch (_: Exception) { /* Silent fail */ }
+                } catch (_: Exception) { }
             }
 
-            override fun afterHookedMethod(param: MethodHookParam) {
+            override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
                 try {
                     val resp = param.result ?: return
                     val code = findMethodSafe(resp.javaClass, "code")?.invoke(resp) as? Int ?: return
@@ -76,10 +73,8 @@ fun SpotifyHook.LogOutPatch() {
                     val url = findMethodSafe(req.javaClass, "url")?.invoke(req) ?: return
                     val host = findMethodSafe(url.javaClass, "host")?.invoke(url) as? String ?: ""
 
-                    // Target: login/auth/token refresh endpoints
                     val isAuthEndpoint = host.contains("login5") || host.contains("googleusercontent") || host.contains("spotify.com")
 
-                    // LAYER 1: Caching success (200) e Replay su fallimento (401/403)
                     if (code in 200..299 && isAuthEndpoint) {
                         val bodyObj = findMethodSafe(resp.javaClass, "body")?.invoke(resp) ?: return
                         val peeked = runCatching {
@@ -104,9 +99,9 @@ fun SpotifyHook.LogOutPatch() {
                             ?.invoke(null, AuthCache.contentType, AuthCache.body)
                         findMethodSafe(builder.javaClass, "body", bodyClass)?.invoke(builder, replayBody)
 
-                        param.result = findMethodSafe(builder.javaClass, "build")?.invoke(builder)
+                        param.setResult(findMethodSafe(builder.javaClass, "build")?.invoke(builder))
                     }
-                } catch (_: Exception) { /* Silent fail */ }
+                } catch (_: Exception) { }
             }
         })
     } catch (e: Throwable) {
@@ -118,24 +113,28 @@ fun SpotifyHook.LogOutPatch() {
         val editorClass = android.content.SharedPreferences.Editor::class.java
         val protectedKeys = setOf("token", "session", "auth", "login", "account", "credential")
 
-        // Hook remove()
-        XposedHelpers.findAndHookMethod(editorClass, "remove", String::class.java, object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                val key = param.args[0] as? String ?: return
-                if (protectedKeys.any { key.lowercase().contains(it) }) {
-                    Log.i(TAG, "★ L3: Blocked removal of auth key: $key")
-                    param.result = param.thisObject
+        ChimeraBridge.hookMethod(
+            editorClass.getDeclaredMethod("remove", String::class.java),
+            object : ChimeraBridge.XC_MethodHook() {
+                override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    val key = param.args?.get(0) as? String ?: return
+                    if (protectedKeys.any { key.lowercase().contains(it) }) {
+                        Log.i(TAG, "★ L3: Blocked removal of auth key: $key")
+                        param.setResult(param.thisObject)
+                    }
                 }
             }
-        })
+        )
 
-        // Hook clear()
-        XposedHelpers.findAndHookMethod(editorClass, "clear", object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                Log.w(TAG, "★ L3: Blocked SharedPreferences.clear() to preserve session")
-                param.result = param.thisObject
+        ChimeraBridge.hookMethod(
+            editorClass.getDeclaredMethod("clear"),
+            object : ChimeraBridge.XC_MethodHook() {
+                override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    Log.w(TAG, "★ L3: Blocked SharedPreferences.clear() to preserve session")
+                    param.setResult(param.thisObject)
+                }
             }
-        })
+        )
     } catch (e: Throwable) {
         Log.e(TAG, "L3 Hook Failure: ${e.message}")
     }

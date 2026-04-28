@@ -9,13 +9,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import app.revanced.extension.shared.Utils
-import de.robv.android.xposed.IXposedHookLoadPackage
-import de.robv.android.xposed.IXposedHookZygoteInit
-import de.robv.android.xposed.IXposedHookZygoteInit.StartupParam
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.XposedHelpers
-import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
 import io.github.chsbuffer.revancedxposed.spotify.AdBlockHook
 import io.github.chsbuffer.revancedxposed.spotify.RoundyUIHook
 import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
@@ -27,38 +20,27 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.provider.Settings
 import java.io.File
+import de.robv.android.xposed.XposedBridge
+import de.robv.android.xposed.XposedHelpers
 
-class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
+class MainHook {
     private var isInitialized = false
-    
-    lateinit var startupParam: StartupParam
-    lateinit var lpparam: LoadPackageParam
     lateinit var app: Application
-    var targetPackageName: String? = null
     val hooksByPackage = mapOf(
-        "com.spotify.music" to { SpotifyHook(app, lpparam) },
+        "com.spotify.music" to { SpotifyHook(app) },
     )
 
     private external fun setInternalApkPath(path: String)
 
-    fun shouldHook(packageName: String): Boolean {
-        if (!hooksByPackage.containsKey(packageName)) return false
-        if (targetPackageName == null) targetPackageName = packageName
-        return targetPackageName == packageName
-    }
-
-    override fun handleLoadPackage(lpparam: LoadPackageParam) {
+    fun handleStandalone(context: Application) {
         if (isInitialized) return
         isInitialized = true
 
-        log("Entering process ${lpparam.packageName}")
-        
-        if (!lpparam.isFirstApplication) return
-        if (!shouldHook(lpparam.packageName)) return
-        this.lpparam = lpparam
+        log("Entering standalone process ${context.packageName}")
+        this.app = context
 
         // --- PHASE 1: NATIVE GHOST SHIELD ---
-        if (lpparam.packageName == "com.spotify.music") {
+        if (context.packageName == "com.spotify.music") {
             try {
                 System.loadLibrary("ghost")
                 log("Native Ghost Shield active")
@@ -68,56 +50,45 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         }
 
         // --- PHASE 2: UI & DYNAMIC ENGINE BOOTSTRAP ---
-        inContext(lpparam) { context ->
-            this.app = context
-            
-            if (lpparam.packageName == "com.spotify.music") {
-                // Handle Stock APK Escrow for Dobby
-                val internalApk = prepareOriginalApk(lpparam)
-                if (internalApk != null) {
-                    runCatching { setInternalApkPath(internalApk.absolutePath) }
-                }
-                
-                // Advanced Stealth & GMS Bypasses
-                spoofSignature(lpparam)
-                hideXposedFromStackTrace()
-                bypassAndroidIdRestriction(lpparam)
-                bypassGmsIntegrity(lpparam)
-                
-                // Bootstrap the dynamic engine
-                ChimeraEngine.bootstrap(context)
+        if (context.packageName == "com.spotify.music") {
+            // Handle Stock APK Escrow for Dobby
+            val internalApk = prepareOriginalApk(context)
+            if (internalApk != null) {
+                runCatching { setInternalApkPath(internalApk.absolutePath) }
             }
-
-            val prefs = context.getSharedPreferences("spotify_prefs", 0)
-            log("Initializing legacy hook chain...")
             
-            if (isReVancedPatched(lpparam)) {
-                Utils.showToastLong("ReVanced Xposed FE module does not work with patched app")
-                return@inContext
-            }
+            // Advanced Stealth & GMS Bypasses
+            hideXposedFromStackTrace()
+            bypassAndroidIdRestriction(context)
+            
+            // Bootstrap the dynamic engine
+            ChimeraEngine.bootstrap(context)
+        }
 
-            val hookConfigs = listOf(
-                "enable_premium" to { hooksByPackage[lpparam.packageName]?.invoke()?.Hook() },
-                "enable_adblock" to { AdBlockHook(lpparam).hook() },
-                "enable_monet" to { ThemeHook(app, lpparam).hook() },
-                "enable_round_ui" to { RoundyUIHook(lpparam).hook() }
-            )
+        val prefs = context.getSharedPreferences("spotify_prefs", 0)
+        log("Initializing legacy hook chain...")
+        
+        val hookConfigs = listOf(
+            "enable_premium" to { hooksByPackage[context.packageName]?.invoke()?.Hook() },
+            "enable_adblock" to { AdBlockHook(context.classLoader).hook() },
+            "enable_monet" to { ThemeHook(context).hook() },
+            "enable_round_ui" to { RoundyUIHook(context.classLoader).hook() }
+        )
 
-            hookConfigs.forEach { (prefKey, hookAction) ->
-                try {
-                    if (prefs.getBoolean(prefKey, true)) {
-                        hookAction()
-                    }
-                } catch (e: Exception) {
-                    log("Hook $prefKey failed: ${e.message}")
+        hookConfigs.forEach { (prefKey, hookAction) ->
+            try {
+                if (prefs.getBoolean(prefKey, true)) {
+                    hookAction()
                 }
+            } catch (e: Exception) {
+                log("Hook $prefKey failed: ${e.message}")
             }
         }
     }
 
     @SuppressLint("SdCardPath", "SetWorldReadable")
-    private fun prepareOriginalApk(lpparam: LoadPackageParam): File? {
-        val internalApk = File(lpparam.appInfo.dataDir, "cache/stock.apk")
+    private fun prepareOriginalApk(context: Application): File? {
+        val internalApk = File(context.cacheDir, "stock.apk")
         val publicApk = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "base.apk")
 
         if (publicApk.exists() && (!internalApk.exists() || publicApk.lastModified() > internalApk.lastModified())) {
@@ -133,73 +104,28 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         return if (internalApk.exists()) internalApk else null
     }
 
-    private fun spoofSignature(lpparam: LoadPackageParam) {
-        val targetPkg = "com.spotify.music"
-        val pmClass = XposedHelpers.findClass("android.app.ApplicationPackageManager", lpparam.classLoader)
-        val pmHook = object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                val pkgName = param.args[0] as String
-                if (pkgName != targetPkg) return
-                val info = param.result as? PackageInfo ?: return
-                val internalApk = File(lpparam.appInfo.dataDir, "cache/stock.apk")
-                if (internalApk.exists()) {
-                    applyOriginalSignature(info, internalApk.absolutePath, param.thisObject as PackageManager)
-                }
-            }
-        }
-        XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, Int::class.javaPrimitiveType, pmHook)
+    private fun bypassAndroidIdRestriction(context: Context) {
         try {
-            val flagsClass = XposedHelpers.findClass("android.content.pm.PackageManager\$PackageInfoFlags", lpparam.classLoader)
-            XposedHelpers.findAndHookMethod(pmClass, "getPackageInfo", String::class.java, flagsClass, pmHook)
-        } catch (ignored: Throwable) {}
-    }
-
-    private fun bypassGmsIntegrity(lpparam: LoadPackageParam) {
-        try {
-            val logClass = XposedHelpers.findClass("android.util.Log", lpparam.classLoader)
-            XposedBridge.hookAllMethods(logClass, "w", object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    val tag = param.args[0] as? String ?: return
-                    if (tag.contains("Gservices") || tag.contains("FA-SVC")) param.result = 0
-                }
-            })
-        } catch (ignored: Throwable) {}
-    }
-
-    private fun bypassAndroidIdRestriction(lpparam: LoadPackageParam) {
-        XposedHelpers.findAndHookMethod("android.provider.Settings\$Secure", lpparam.classLoader, "getString", 
-            android.content.ContentResolver::class.java, String::class.java, object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    if (param.args[1] == Settings.Secure.ANDROID_ID) {
-                        param.result = "8888888888888888"
-                        log("Spoofed ANDROID_ID")
+            val secureClass = XposedHelpers.findClass("android.provider.Settings\$Secure", context.classLoader)
+            ChimeraBridge.hookMethod(
+                XposedHelpers.findMethodExact(secureClass, "getString", android.content.ContentResolver::class.java, String::class.java),
+                object : ChimeraBridge.XC_MethodHook() {
+                    override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                        if (param.args?.get(1) == Settings.Secure.ANDROID_ID) {
+                            param.setResult("8888888888888888")
+                            log("Spoofed ANDROID_ID via ChimeraBridge")
+                        }
                     }
                 }
-            })
-    }
-
-    private fun applyOriginalSignature(info: PackageInfo, originalApkPath: String, pm: PackageManager) {
-        try {
-            val fmi = pm.getPackageArchiveInfo(originalApkPath, PackageManager.GET_SIGNATURES)
-            val originalSignatures = fmi?.signatures
-            if (!originalSignatures.isNullOrEmpty()) {
-                info.signatures = originalSignatures
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                    try {
-                        val signingInfo = XposedHelpers.newInstance(XposedHelpers.findClass("android.content.pm.SigningInfo", pm.javaClass.classLoader))
-                        XposedHelpers.setObjectField(info, "signingInfo", signingInfo)
-                    } catch (ignored: Exception) {}
-                }
-                log("Spoofed signatures from stock.apk")
-            }
-        } catch (e: Exception) {
-            log("Signature error: ${e.message}")
+            )
+        } catch (e: Throwable) {
+            log("Failed to bypass Android ID: ${e.message}")
         }
     }
 
     private fun hideXposedFromStackTrace() {
-        val stealthHook = object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
+        val stealthHook = object : ChimeraBridge.XC_MethodHook() {
+            override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
                 val stackTrace = param.result as? Array<*> ?: return
                 val filteredList = mutableListOf<StackTraceElement>()
                 var modified = false
@@ -227,92 +153,75 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 }
                 
                 if (modified) {
-                    param.result = filteredList.toTypedArray()
+                    param.setResult(filteredList.toTypedArray())
                 }
             }
         }
         runCatching {
-            XposedHelpers.findAndHookMethod(Throwable::class.java, "getStackTrace", stealthHook)
-            XposedHelpers.findAndHookMethod(Thread::class.java, "getStackTrace", stealthHook)
-            // Hook also Throwable.toString() and printStackTrace to be safe
-            XposedHelpers.findAndHookMethod(Throwable::class.java, "toString", object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
+            ChimeraBridge.hookMethod(Throwable::class.java.getDeclaredMethod("getStackTrace"), stealthHook)
+            ChimeraBridge.hookMethod(Thread::class.java.getDeclaredMethod("getStackTrace"), stealthHook)
+            
+            ChimeraBridge.hookMethod(Throwable::class.java.getDeclaredMethod("toString"), object : ChimeraBridge.XC_MethodHook() {
+                override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     val result = param.result as? String ?: return
-                    if (forbiddenTerms.any { result.lowercase().contains(it) }) {
-                        param.result = result.replace(Regex("(?i)(xposed|revanced|chsbuffer|chimera|ghost)"), "AndroidRuntime")
+                    val terms = listOf("xposed", "revanced", "chsbuffer", "chimera", "ghost")
+                    if (terms.any { result.lowercase().contains(it) }) {
+                        param.setResult(result.replace(Regex("(?i)(xposed|revanced|chsbuffer|chimera|ghost)"), "AndroidRuntime"))
                     }
                 }
-                private val forbiddenTerms = listOf("xposed", "revanced", "chsbuffer", "chimera", "ghost")
             })
         }.onFailure {
             log("Stealth hook failed: ${it.message}")
         }
     }
 
-    private fun isReVancedPatched(lpparam: LoadPackageParam): Boolean {
-        return runCatching {
-            lpparam.classLoader.loadClass("app.revanced.extension.shared.Utils")
-        }.isSuccess || runCatching {
-            lpparam.classLoader.loadClass("app.revanced.extension.shared.utils.Utils")
-        }.isSuccess || runCatching {
-            lpparam.classLoader.loadClass("app.revanced.integrations.shared.Utils")
-        }.isSuccess || runCatching {
-            lpparam.classLoader.loadClass("app.revanced.integrations.shared.utils.Utils")
-        }.isSuccess
-    }
-
-    override fun initZygote(startupParam: StartupParam) {
-        this.startupParam = startupParam
-        XposedInit = startupParam
-    }
-
     companion object {
         private var isBootstrapped = false
+        val instance = MainHook()
 
         fun log(message: String) {
-            XposedBridge.log("Chimera: $message")
+            android.util.Log.i("Chimera:Main", message)
         }
 
         fun log(e: Throwable) {
-            XposedBridge.log("Chimera Error: ${e.message}")
-            XposedBridge.log(e)
+            android.util.Log.e("Chimera:Main", "Error", e)
         }
 
         @JvmStatic
         fun nativeBootstrap(context: Context) {
             if (isBootstrapped) return
             isBootstrapped = true
-
-            // This is called by libghost.so after fileless memory injection
-            // We use a Handler to avoid blocking the main thread during initialization
-            // and to ensure the Spotify application context is fully stabilized.
             log("Static Native Bootstrap triggered")
             
             Handler(Looper.getMainLooper()).postDelayed({
                 runCatching {
                     log("Asynchronous Engine Activation...")
-                    ChimeraEngine.bootstrap(context)
+                    if (context is Application) {
+                        instance.handleStandalone(context)
+                    } else {
+                        instance.handleStandalone(context.applicationContext as Application)
+                    }
                 }.onFailure {
                     log(it)
                 }
-            }, 100) // Small delay to let Spotify breathe
+            }, 100)
         }
     }
 }
 
-fun inContext(lpparam: LoadPackageParam, f: (Application) -> Unit) {
-    val appClassName = lpparam.appInfo.className ?: "android.app.Application"
-    val appClazz = XposedHelpers.findClass(appClassName, lpparam.classLoader)
-    
+fun inContext(context: Application, f: (Application) -> Unit) {
     try {
-        XposedHelpers.findAndHookMethod(appClazz, "onCreate", object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                val app = param.thisObject as Application
-                Utils.setContext(app)
-                f(app)
+        ChimeraBridge.hookMethod(
+            context.javaClass.getDeclaredMethod("onCreate"),
+            object : ChimeraBridge.XC_MethodHook() {
+                override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    val app = param.thisObject as Application
+                    Utils.setContext(app)
+                    f(app)
+                }
             }
-        })
+        )
     } catch (e: Throwable) {
-        MainHook.log("Failed to hook onCreate in $appClassName: ${e.message}")
+        MainHook.log("Failed to hook onCreate: ${e.message}")
     }
 }

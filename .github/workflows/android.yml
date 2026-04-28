@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ "refactor" ]
+    branches: [ "chimera" ]
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch: # Permette di avviare la build manualmente da GitHub

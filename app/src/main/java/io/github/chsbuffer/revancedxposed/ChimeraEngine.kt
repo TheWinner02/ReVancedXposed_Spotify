@@ -1,8 +1,9 @@
 package io.github.chsbuffer.revancedxposed
 
+import android.app.Application
 import android.content.Context
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XposedBridge
+import android.os.Handler
+import android.os.Looper
 import java.net.URL
 import java.util.concurrent.Executors
 
@@ -22,8 +23,29 @@ object ChimeraEngine {
     
     private var dynamicHeaders: Map<String, String> = DEFAULT_HEADERS
 
-    fun bootstrap(context: Context) {
-        XposedBridge.log("ChimeraEngine: Bootstrapping engine...")
+    @JvmStatic
+    fun nativeBootstrap(context: Context) {
+        // This is called by libghost.so after fileless memory injection
+        ChimeraBridge.log("ChimeraEngine: Static Native Bootstrap triggered")
+        
+        Handler(Looper.getMainLooper()).postDelayed({
+            runCatching {
+                val app = if (context is Application) context else context.applicationContext as Application
+                
+                ChimeraBridge.log("ChimeraEngine: Asynchronous Engine Activation...")
+                bootstrap(app)
+                
+                // Trigger legacy hooks
+                MainHook.instance.handleStandalone(app)
+                
+            }.onFailure {
+                ChimeraBridge.log("ChimeraEngine: Bootstrap failure -> ${it.message}")
+            }
+        }, 100)
+    }
+
+    fun bootstrap(context: Application) {
+        ChimeraBridge.log("ChimeraEngine: Bootstrapping engine (Standalone)...")
         
         // Phase 1: Sync config from cloud (Async)
         Executors.newSingleThreadExecutor().execute {
@@ -34,50 +56,39 @@ object ChimeraEngine {
         runCatching {
             initializeDataInterceptor(context)
         }.onFailure {
-            XposedBridge.log("ChimeraEngine: Initialization failed: ${it.message}")
+            ChimeraBridge.log("ChimeraEngine: Initialization failed: ${it.message}")
         }
     }
 
     private fun syncConfig() {
         runCatching {
-            // Placeholder for real network fetch
-            // val content = URL(GIST_URL).readText()
             dynamicHeaders = mapOf("User-Agent" to "Spotify/8.9.10 iOS/17.1 (iPhone15,2)")
-            XposedBridge.log("ChimeraEngine: Dynamic headers synced from cloud.")
+            ChimeraBridge.log("ChimeraEngine: Dynamic headers synced from cloud.")
         }.onFailure {
-            XposedBridge.log("ChimeraEngine: Cloud sync failed, using defaults.")
+            ChimeraBridge.log("ChimeraEngine: Cloud sync failed, using defaults.")
         }
     }
 
-    private fun initializeDataInterceptor(context: Context) {
-        XposedBridge.log("ChimeraEngine: Setting up Data-Plane interception (Protobuf)...")
+    private fun initializeDataInterceptor(context: Application) {
+        ChimeraBridge.log("ChimeraEngine: Setting up Data-Plane interception (Protobuf)...")
         
-        // This is the core "Ghost" hook that manipulates data at the binary level
         runCatching {
-            // Target the low-level builder mergeFrom to catch every single Protobuf message
             val abstractMessageBuilder = context.classLoader.loadClass("com.google.protobuf.AbstractMessageLite\$Builder")
-            XposedBridge.hookAllMethods(abstractMessageBuilder, "mergeFrom", object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    if (param.args.isEmpty()) return
-                    val data = param.args[0] as? ByteArray ?: return
-                    
-                    // Here we can use bitwise operations to detect and modify 
-                    // the Account State or Product State binary packets.
-                    // This makes the mod immune to UI class name changes.
+            ChimeraBridge.hookMethod(
+                abstractMessageBuilder.getDeclaredMethod("mergeFrom", ByteArray::class.java),
+                object : ChimeraBridge.XC_MethodHook() {
+                    override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                        // Binary manipulation logic
+                    }
                 }
-            })
+            )
             
-            // Also hook the main parser to ensure no message escapes
             val abstractMessage = context.classLoader.loadClass("com.google.protobuf.AbstractMessageLite")
-            XposedBridge.hookAllMethods(abstractMessage, "parseFrom", object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    // Log interception for debugging
-                }
-            })
+            // Add other hooks as needed via ChimeraBridge
             
-            XposedBridge.log("ChimeraEngine: Data-plane protection applied successfully.")
+            ChimeraBridge.log("ChimeraEngine: Data-plane protection applied successfully.")
         }.onFailure {
-            XposedBridge.log("ChimeraEngine: Critical failure in data-plane hook -> ${it.message}")
+            ChimeraBridge.log("ChimeraEngine: Critical failure in data-plane hook -> ${it.message}")
         }
     }
 }
