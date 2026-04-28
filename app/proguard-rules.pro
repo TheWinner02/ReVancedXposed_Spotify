@@ -28,9 +28,6 @@
 -keep class io.github.chsbuffer.revancedxposed.ChimeraEngine { *; }
 -keep class io.github.chsbuffer.revancedxposed.spotify.** { *; }
 
-# Mantieni le interfacce Xposed per la compatibilità binaria
--keep class de.robv.android.xposed.** { *; }
--dontwarn de.robv.android.xposed.**
 
 # DexKit e dipendenze (necessari per il mapping dinamico)
 -keep class org.luckypray.dexkit.** { *; }

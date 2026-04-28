@@ -126,9 +126,6 @@ dependencies {
     implementation(libs.material)
     implementation(libs.pine)
     
-    // For standalone reflection utilities (not bundled)
-    compileOnly(libs.xposed)
-    
     testImplementation(kotlin("test-junit5"))
     testImplementation(libs.junit.jupiter.params)
     testImplementation(libs.jadx.core)

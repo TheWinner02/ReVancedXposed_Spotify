@@ -3,24 +3,14 @@ package io.github.chsbuffer.revancedxposed
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
-import android.view.View
-import android.view.ViewGroup
-import android.widget.ImageView
 import app.revanced.extension.shared.Utils
 import io.github.chsbuffer.revancedxposed.spotify.AdBlockHook
 import io.github.chsbuffer.revancedxposed.spotify.RoundyUIHook
-import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
-import androidx.core.view.isNotEmpty
 import android.os.Environment
-import android.content.pm.PackageInfo
-import android.content.pm.PackageManager
 import android.provider.Settings
 import java.io.File
-import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 
 class MainHook {
@@ -49,7 +39,7 @@ class MainHook {
             }
         }
 
-        // --- PHASE 2: UI & DYNAMIC ENGINE BOOTSTRAP ---
+        // --- PHASE 2: LEGACY HOOK PREPARATION ---
         if (context.packageName == "com.spotify.music") {
             // Handle Stock APK Escrow for Dobby
             val internalApk = prepareOriginalApk(context)
@@ -60,9 +50,6 @@ class MainHook {
             // Advanced Stealth & GMS Bypasses
             hideXposedFromStackTrace()
             bypassAndroidIdRestriction(context)
-            
-            // Bootstrap the dynamic engine
-            ChimeraEngine.bootstrap(context)
         }
 
         val prefs = context.getSharedPreferences("spotify_prefs", 0)
@@ -176,7 +163,6 @@ class MainHook {
     }
 
     companion object {
-        private var isBootstrapped = false
         val instance = MainHook()
 
         fun log(message: String) {
@@ -185,26 +171,6 @@ class MainHook {
 
         fun log(e: Throwable) {
             android.util.Log.e("Chimera:Main", "Error", e)
-        }
-
-        @JvmStatic
-        fun nativeBootstrap(context: Context) {
-            if (isBootstrapped) return
-            isBootstrapped = true
-            log("Static Native Bootstrap triggered")
-            
-            Handler(Looper.getMainLooper()).postDelayed({
-                runCatching {
-                    log("Asynchronous Engine Activation...")
-                    if (context is Application) {
-                        instance.handleStandalone(context)
-                    } else {
-                        instance.handleStandalone(context.applicationContext as Application)
-                    }
-                }.onFailure {
-                    log(it)
-                }
-            }, 100)
         }
     }
 }

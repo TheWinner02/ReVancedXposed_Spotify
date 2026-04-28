@@ -4,7 +4,6 @@ import android.app.Application
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import java.net.URL
 import java.util.concurrent.Executors
 
 /**
@@ -12,7 +11,7 @@ import java.util.concurrent.Executors
  * Handles dynamic updates and data-plane interception.
  */
 object ChimeraEngine {
-    private const val GIST_URL = "https://gist.githubusercontent.com/TheWinner02/33c706d15b0b2e8a1f6a/raw/spotify_headers.json"
+    private var isBootstrapped = false
     
     // Dati reali estratti dai file locali dell'utente (AyuGram Desktop/spoof/)
     private val DEFAULT_HEADERS = mapOf(
@@ -25,6 +24,8 @@ object ChimeraEngine {
 
     @JvmStatic
     fun nativeBootstrap(context: Context) {
+        if (isBootstrapped) return
+        isBootstrapped = true
         // This is called by libghost.so after fileless memory injection
         ChimeraBridge.log("ChimeraEngine: Static Native Bootstrap triggered")
         
@@ -33,10 +34,8 @@ object ChimeraEngine {
                 val app = if (context is Application) context else context.applicationContext as Application
                 
                 ChimeraBridge.log("ChimeraEngine: Asynchronous Engine Activation...")
-                bootstrap(app)
-                
-                // Trigger legacy hooks
                 MainHook.instance.handleStandalone(app)
+                bootstrap(app)
                 
             }.onFailure {
                 ChimeraBridge.log("ChimeraEngine: Bootstrap failure -> ${it.message}")
