@@ -139,7 +139,20 @@ fun Class<*>.findFirstFieldByExactType(type: Class<*>): Field {
 
 // --- CLASS UTILS ---
 
-fun String.findClass(classLoader: ClassLoader?): Class<*> = Class.forName(this, false, classLoader)
+fun String.findClass(classLoader: ClassLoader?): Class<*> {
+    return when (this) {
+        "int" -> Int::class.javaPrimitiveType!!
+        "boolean" -> Boolean::class.javaPrimitiveType!!
+        "long" -> Long::class.javaPrimitiveType!!
+        "float" -> Float::class.javaPrimitiveType!!
+        "double" -> Double::class.javaPrimitiveType!!
+        "char" -> Char::class.javaPrimitiveType!!
+        "byte" -> Byte::class.javaPrimitiveType!!
+        "short" -> Short::class.javaPrimitiveType!!
+        "void" -> Void.TYPE
+        else -> Class.forName(this, false, classLoader)
+    }
+}
 
 fun String.findClassOrNull(classLoader: ClassLoader?): Class<*>? = runCatching { findClass(classLoader) }.getOrNull()
 

@@ -134,8 +134,8 @@ abstract class BaseHook(private val app: Application) : IHook {
 
     // cache
     private val moduleRel = BuildConfig.COMMIT_HASH
-    private var cache = SharedPrefCache(app)
-    private var dexkit = run {
+    private val cache by lazy { SharedPrefCache(app) }
+    private val dexkit by lazy {
         System.loadLibrary("dexkit")
         DexKitCacheBridge.init(cache)
         DexKitCacheBridge.create("", app.applicationInfo.sourceDir)
@@ -143,8 +143,10 @@ abstract class BaseHook(private val app: Application) : IHook {
 
     override fun Hook() {
         val t = measureTimeMillis {
+            // Inizializziamo i componenti lazy qui dentro, 
+            // idealmente dopo che gli hook strutturali (come Extension) sono pronti.
             tryLoadCache()
-            dexkit.use { dexkit ->
+            dexkit.use {
                 applyHooks()
                 handleResult()
                 logDebugInfo()

@@ -69,8 +69,10 @@ object ChimeraEngine {
     }
 
     private fun initializeDataInterceptor(context: Application) {
-        ChimeraBridge.log("ChimeraEngine: Setting up Data-Plane interception (Protobuf)...")
+        ChimeraBridge.log("ChimeraEngine: Data-plane protection deferred (ClassLoader safe mode)")
         
+        /* 
+        // Disabilitato temporaneamente per isolare il crash Ln; <init>
         runCatching {
             val abstractMessageBuilder = context.classLoader.loadClass("com.google.protobuf.AbstractMessageLite\$Builder")
             ChimeraBridge.hookMethod(
@@ -89,5 +91,6 @@ object ChimeraEngine {
         }.onFailure {
             ChimeraBridge.log("ChimeraEngine: Critical failure in data-plane hook -> ${it.message}")
         }
+        */
     }
 }
