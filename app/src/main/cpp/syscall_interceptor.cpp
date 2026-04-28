@@ -1,7 +1,8 @@
 #include <jni.h>
 #include <android/log.h>
 #include <unistd.h>
-#include <string.h>
+#include <cstring>
+#include <cstdio>
 #include <sys/stat.h>
 #include <dlfcn.h>
 #include "dobby.h"
