@@ -126,7 +126,7 @@ dependencies {
     implementation(libs.material)
     
     // For standalone Chimera injection, we bundle Xposed APIs
-    implementation(libs.xposed)
+    compileOnly(libs.xposed)
     
     testImplementation(kotlin("test-junit5"))
     testImplementation(libs.junit.jupiter.params)
