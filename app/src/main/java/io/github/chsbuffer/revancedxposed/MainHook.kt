@@ -118,11 +118,30 @@ class MainHook {
             })
 
             // AGGIUNTO: Deep Security Bypass
+            bypassDebugFlags(context)
             spoofSystemProperties()
             spoofPackageManager(context)
             
         } catch (e: Throwable) {
             log("Failed to bypass identity restrictions: ${e.message}")
+        }
+    }
+
+    private fun bypassDebugFlags(context: Context) {
+        runCatching {
+            val appInfo = context.applicationInfo
+            // Rimuoviamo il flag debuggable che MT Manager o il sistema potrebbero aver settato
+            appInfo.flags = appInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE.inv()
+            
+            // Hookiamo Debug.isDebuggerConnected()
+            val debugClass = Class.forName("android.os.Debug")
+            val isDebuggerConnectedMethod = debugClass.getDeclaredMethod("isDebuggerConnected")
+            ChimeraBridge.hookMethod(isDebuggerConnectedMethod, object : ChimeraBridge.XC_MethodHook() {
+                override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
+                    param.setResult(false)
+                }
+            })
+            log("Debug flags and debugger detection neutralized.")
         }
     }
 
@@ -134,16 +153,17 @@ class MainHook {
             ChimeraBridge.hookMethod(getMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     val key = param.args?.get(0) as? String ?: return
-                    if (key == "ro.debuggable" || key == "ro.secure" || key == "ro.build.selinux") {
-                        val fakeValue = when(key) {
-                            "ro.debuggable" -> "0"
-                            "ro.secure" -> "1"
-                            "ro.build.selinux" -> "1"
-                            else -> param.result as? String
-                        }
-                        param.setResult(fakeValue)
-                        log("Spoofed SystemProperty $key -> $fakeValue")
+                    val fakeValue = when(key) {
+                        "ro.debuggable" -> "0"
+                        "ro.secure" -> "1"
+                        "ro.build.selinux" -> "1"
+                        "ro.build.tags" -> "release-keys"
+                        "ro.product.model" -> "SM-S911B" // Galaxy S23
+                        "ro.product.brand" -> "samsung"
+                        else -> return
                     }
+                    param.setResult(fakeValue)
+                    log("Spoofed SystemProperty $key -> $fakeValue")
                 }
             })
         }

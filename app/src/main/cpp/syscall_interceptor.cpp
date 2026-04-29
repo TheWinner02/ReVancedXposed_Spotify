@@ -94,8 +94,15 @@ static fopen_t orig_fopen = nullptr;
 FILE* my_fopen(const char* pathname, const char* mode) {
     if (pathname && strstr(pathname, "/proc/self/maps") != nullptr) {
         LOGI("Ghost: liborbit is scanning memory maps. Redirection active.");
-        // Redirect a un file inaccessibile o filtrato se Spotify lo usa per bloccare il login
+        // In una fase successiva potremmo passare un file 'pulito'
+        // Per ora monitoriamo: se il login fallisce qui, sappiamo che dobbiamo filtrare
     }
+
+    // Root Cloaking: nascondiamo binari comuni di root
+    if (pathname && (strstr(pathname, "/su") || strstr(pathname, "/magisk") || strstr(pathname, "busybox"))) {
+        return nullptr; // File non trovato
+    }
+
     return orig_fopen(pathname, mode);
 }
 
