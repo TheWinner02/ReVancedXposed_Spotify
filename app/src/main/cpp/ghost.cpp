@@ -20,6 +20,7 @@
 
 // External declarations
 void install_syscall_hooks();
+extern "C" void set_maps_cache_path(const char* path);
 
 extern "C" JNIEXPORT jboolean JNICALL Java_com_google_firebase_crashlytics_ndk_JniNativeApi_nativeInit(JNIEnv* env, jobject thiz, jobjectArray args, jobject obj) {
     LOGW("Chimera: Proxying Firebase nativeInit...");
@@ -35,6 +36,19 @@ void load_java_payload(JNIEnv* env, jobject context) {
     LOGI("Chimera: Payload injection started.");
 
     jclass contextClass = env->GetObjectClass(context);
+
+    // Early Stealth: Set maps cache path
+    jmethodID getCacheDirMethod = env->GetMethodID(contextClass, "getCacheDir", "()Ljava/io/File;");
+    jobject cacheDirFile = env->CallObjectMethod(context, getCacheDirMethod);
+    if (cacheDirFile) {
+        jclass fileClass = env->GetObjectClass(cacheDirFile);
+        jmethodID getAbsolutePathMethod = env->GetMethodID(fileClass, "getAbsolutePath", "()Ljava/lang/String;");
+        jstring cachePath = (jstring)env->CallObjectMethod(cacheDirFile, getAbsolutePathMethod);
+        const char* pathStr = env->GetStringUTFChars(cachePath, nullptr);
+        set_maps_cache_path(pathStr);
+        env->ReleaseStringUTFChars(cachePath, pathStr);
+    }
+
     jmethodID getAssetsMethod = env->GetMethodID(contextClass, "getAssets", "()Landroid/content/res/AssetManager;");
     jobject assetManagerObj = env->CallObjectMethod(context, getAssetsMethod);
     AAssetManager* assetManager = AAssetManager_fromJava(env, assetManagerObj);

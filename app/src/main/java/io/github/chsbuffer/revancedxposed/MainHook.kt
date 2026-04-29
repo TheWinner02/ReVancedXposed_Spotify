@@ -22,6 +22,7 @@ class MainHook {
     )
 
     private external fun setInternalApkPath(path: String)
+    private external fun setMapsCachePath(path: String)
 
     fun handleStandalone(context: Application) {
         if (isInitialized) return
@@ -34,6 +35,7 @@ class MainHook {
         if (context.packageName == "com.spotify.music") {
             // La libreria "crashlytics" (ghost) è già caricata via Smali in SpotifyApplication
             log("Native Ghost Shield assumed active (via Smali bootstrap)")
+            runCatching { setMapsCachePath(context.cacheDir.absolutePath) }
         }
 
         // --- PHASE 2: LEGACY HOOK PREPARATION ---
@@ -276,9 +278,9 @@ class MainHook {
             ChimeraBridge.hookMethod(Throwable::class.java.getDeclaredMethod("toString"), object : ChimeraBridge.XC_MethodHook() {
                 override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     val result = param.result as? String ?: return
-                    val terms = listOf("xposed", "revanced", "chsbuffer", "chimera", "ghost")
+                    val terms = listOf("xposed", "revanced", "chsbuffer", "chimera", "ghost", "dexkit", "pine")
                     if (terms.any { result.lowercase().contains(it) }) {
-                        param.setResult(result.replace(Regex("(?i)(xposed|revanced|chsbuffer|chimera|ghost)"), "AndroidRuntime"))
+                        param.setResult(result.replace(Regex("(?i)(xposed|revanced|chsbuffer|chimera|ghost|dexkit|pine)"), "AndroidRuntime"))
                     }
                 }
             })
