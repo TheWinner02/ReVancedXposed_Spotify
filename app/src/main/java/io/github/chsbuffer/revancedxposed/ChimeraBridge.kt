@@ -160,10 +160,10 @@ object ChimeraBridge {
     }
 
     fun log(message: String) {
-        android.util.Log.i("Chimera:Bridge", message)
+        android.util.Log.i("BpsRuntime", message)
     }
 
     fun log(t: Throwable) {
-        android.util.Log.e("Chimera:Bridge", "Error", t)
+        android.util.Log.e("BpsRuntime", "Error", t)
     }
 }

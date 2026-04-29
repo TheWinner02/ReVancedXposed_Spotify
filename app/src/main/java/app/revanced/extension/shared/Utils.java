@@ -1,7 +1,7 @@
 /*
  * Custom changes:
  * getPatchesReleaseVersion() from BuildConfig
- * getResourceIdentifier(Context, String, String) searches with package:ReVancedXposed as fallback
+ * getResourceIdentifier(Context, String, String)
  * */
 package app.revanced.extension.shared;
 

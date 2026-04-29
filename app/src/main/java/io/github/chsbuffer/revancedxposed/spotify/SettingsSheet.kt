@@ -54,7 +54,7 @@ object SettingsSheet {
 
         // --- TITOLO ---
         root.addView(TextView(activity).apply {
-            text = "Revanced Xposed FE Settings"
+            text = "Xposed FE Settings"
             textSize = 20f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)

@@ -62,7 +62,7 @@ class SpotifyHook(app: Application) : BaseHook(app) {
             )
 
         }.onFailure {
-            ChimeraBridge.log("NHB error -> ${it.message}")
+            ChimeraBridge.log("Connection error -> ${it.message}")
         }
     }
 }

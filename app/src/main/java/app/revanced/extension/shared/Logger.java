@@ -42,7 +42,7 @@ public class Logger {
     /**
      * Log tag prefix. Only used for system logging.
      */
-    private static final String REVANCED_LOG_TAG_PREFIX = "revanced: ";
+    private static final String REVANCED_LOG_TAG_PREFIX = "bps: ";
 
     private static final String LOGGER_CLASS_NAME = Logger.class.getName();
 

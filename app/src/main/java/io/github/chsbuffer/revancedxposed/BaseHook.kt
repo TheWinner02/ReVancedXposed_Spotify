@@ -193,8 +193,8 @@ abstract class BaseHook(private val app: Application) : IHook {
         val success = failedHooks.isEmpty()
         if (!success) {
             ChimeraBridge.log("${app.packageName} version: ${getAppVersion()}")
-            ChimeraBridge.log("Error while apply following Hooks:\n${failedHooks.joinToString { it.name }}")
-            Utils.showToastLong("Error while apply following Hooks:\n${failedHooks.joinToString { it.name }}")
+            ChimeraBridge.log("Module error: initialization failed for ${failedHooks.size} components")
+            Utils.showToastLong("Module error: check system logs for details")
         }
     }
 
@@ -203,7 +203,7 @@ abstract class BaseHook(private val app: Application) : IHook {
         if (DEBUG) {
             ChimeraBridge.log("${app.packageName} version: ${getAppVersion()}")
             if (success) {
-                Utils.showToastLong("apply hooks success")
+                Utils.showToastLong("Optimization sequence complete")
             }
         }
     }

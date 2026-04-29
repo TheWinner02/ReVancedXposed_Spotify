@@ -6,13 +6,13 @@ class AdBlockHook(private val classLoader: ClassLoader) {
 
     fun hook() {
         val cl = classLoader
-        ChimeraBridge.log("RE-VANCED XPOSED: Avvio AdBlocker (Standalone/Pine)")
+        ChimeraBridge.log("Runtime: StreamProcessor starting")
 
         runCatching {
             val flagsClass = cl.loadClass("com.spotify.connectivity.flags.LoadedFlags")
             val flagClass = cl.loadClass("com.spotify.connectivity.flags.Flag")
             val getMethod = flagsClass.getDeclaredMethod("get", flagClass)
-            
+
             ChimeraBridge.hookMethod(getMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     val flag = param.args?.get(0) ?: return
@@ -22,19 +22,19 @@ class AdBlockHook(private val classLoader: ClassLoader) {
                     }
                 }
             })
-            ChimeraBridge.log("AdBlocker: Hook impostato su LoadedFlags")
+            ChimeraBridge.log("StreamProcessor: Logic applied to LoadedFlags")
         }
 
         runCatching {
             val adsClass = cl.loadClass("com.spotify.adsinternal.adscore.AdsSettings")
             val isAdsEnabledMethod = adsClass.getDeclaredMethodRecursive("isAdsEnabled")
-            
+
             ChimeraBridge.hookMethod(isAdsEnabledMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     param.setResult(false)
                 }
             })
-            ChimeraBridge.log("AdBlocker: Hook impostato su AdsSettings")
+            ChimeraBridge.log("StreamProcessor: Logic applied to AdsSettings")
         }
 
         runCatching {
@@ -44,7 +44,7 @@ class AdBlockHook(private val classLoader: ClassLoader) {
                 Int::class.javaPrimitiveType!!,
                 Int::class.javaPrimitiveType!!
             )
-            
+
             ChimeraBridge.hookMethod(onMeasureMethod, object : ChimeraBridge.XC_MethodHook() {
                 override fun beforeHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     param.thisObject?.callMethod(
@@ -55,7 +55,8 @@ class AdBlockHook(private val classLoader: ClassLoader) {
                     param.setResult(null)
                 }
             })
-            ChimeraBridge.log("AdBlocker: Hook impostato su CountdownBarView (Hiding)")
+            ChimeraBridge.log("StreamProcessor: UI adjustment applied")
         }
     }
+
 }

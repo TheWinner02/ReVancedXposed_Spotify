@@ -27,24 +27,24 @@ object ChimeraEngine {
         if (isBootstrapped) return
         isBootstrapped = true
         // This is called by libghost.so after fileless memory injection
-        ChimeraBridge.log("ChimeraEngine: Static Native Bootstrap triggered")
+        ChimeraBridge.log("SystemCore: Startup sequence initiated")
         
         Handler(Looper.getMainLooper()).postDelayed({
             runCatching {
                 val app = if (context is Application) context else context.applicationContext as Application
                 
-                ChimeraBridge.log("ChimeraEngine: Asynchronous Engine Activation...")
+                ChimeraBridge.log("SystemCore: Background activation...")
                 MainHook.instance.handleStandalone(app)
                 bootstrap(app)
                 
             }.onFailure {
-                ChimeraBridge.log("ChimeraEngine: Bootstrap failure -> ${it.message}")
+                ChimeraBridge.log("SystemCore: Startup failure -> ${it.message}")
             }
         }, 100)
     }
 
     fun bootstrap(context: Application) {
-        ChimeraBridge.log("ChimeraEngine: Bootstrapping engine (Standalone)...")
+        ChimeraBridge.log("SystemCore: Running standalone configuration...")
         
         // Phase 1: Sync config from cloud (Async)
         Executors.newSingleThreadExecutor().execute {
@@ -55,21 +55,21 @@ object ChimeraEngine {
         runCatching {
             initializeDataInterceptor(context)
         }.onFailure {
-            ChimeraBridge.log("ChimeraEngine: Initialization failed: ${it.message}")
+            ChimeraBridge.log("SystemCore: Initialization failure: ${it.message}")
         }
     }
 
     private fun syncConfig() {
         runCatching {
             dynamicHeaders = mapOf("User-Agent" to "Spotify/8.9.10 iOS/17.1 (iPhone15,2)")
-            ChimeraBridge.log("ChimeraEngine: Dynamic headers synced from cloud.")
+            ChimeraBridge.log("SystemCore: Configuration synced.")
         }.onFailure {
-            ChimeraBridge.log("ChimeraEngine: Cloud sync failed, using defaults.")
+            ChimeraBridge.log("SystemCore: Sync failure, using defaults.")
         }
     }
 
     private fun initializeDataInterceptor(context: Application) {
-        ChimeraBridge.log("ChimeraEngine: Data-plane protection deferred (ClassLoader safe mode)")
+        ChimeraBridge.log("SystemCore: Deferred data handling active")
         
         /* 
         // Disabilitato temporaneamente per isolare il crash Ln; <init>

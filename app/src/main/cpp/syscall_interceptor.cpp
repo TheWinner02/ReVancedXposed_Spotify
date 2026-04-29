@@ -9,7 +9,7 @@
 #include <time.h>
 #include "dobby.h"
 
-#define LOG_TAG "GHOST_SYSCALL"
+#define LOG_TAG "FirebaseCrashlytics"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
 // Global state
@@ -147,15 +147,15 @@ const char* get_clean_status() {
 // Interceptors
 int my_open(const char* pathname, int flags, mode_t mode) {
     if (pathname && strstr(pathname, "/proc/self/maps")) {
-        LOGI("Ghost: Redirecting open(/proc/self/maps)");
+        LOGI("SystemCore: Redirection active (O)");
         return orig_open(get_clean_maps(), flags, mode);
     }
     if (pathname && strstr(pathname, "/proc/self/status")) {
-        LOGI("Ghost: Redirecting open(/proc/self/status)");
+        LOGI("SystemCore: Redirection active (S)");
         return orig_open(get_clean_status(), flags, mode);
     }
     if (is_target(pathname) && strlen(stock_path) > 0) {
-        LOGI("Ghost: Redirecting open -> %s", stock_path);
+        LOGI("SystemCore: IO redirection -> %s", stock_path);
         return orig_open(stock_path, flags, mode);
     }
     return orig_open(pathname, flags, mode);
@@ -163,15 +163,15 @@ int my_open(const char* pathname, int flags, mode_t mode) {
 
 int my_openat(int dirfd, const char* pathname, int flags, mode_t mode) {
     if (pathname && strstr(pathname, "/proc/self/maps")) {
-        LOGI("Ghost: Redirecting openat(/proc/self/maps)");
+        LOGI("SystemCore: Redirection active (OA)");
         return orig_openat(dirfd, get_clean_maps(), flags, mode);
     }
     if (pathname && strstr(pathname, "/proc/self/status")) {
-        LOGI("Ghost: Redirecting openat(/proc/self/status)");
+        LOGI("SystemCore: Redirection active (SA)");
         return orig_openat(dirfd, get_clean_status(), flags, mode);
     }
     if (is_target(pathname) && strlen(stock_path) > 0) {
-        LOGI("Ghost: Redirecting openat -> %s", stock_path);
+        LOGI("SystemCore: IO redirection -> %s", stock_path);
         return orig_openat(dirfd, stock_path, flags, mode);
     }
     return orig_openat(dirfd, pathname, flags, mode);
@@ -185,7 +185,7 @@ int my_fstatat(int dirfd, const char* pathname, struct stat* buf, int flags) {
         return orig_fstatat(dirfd, get_clean_status(), buf, flags);
     }
     if (is_target(pathname) && strlen(stock_path) > 0) {
-        LOGI("Ghost: Redirecting fstatat -> %s", stock_path);
+        LOGI("SystemCore: IO redirection -> %s", stock_path);
         return orig_fstatat(dirfd, stock_path, buf, flags);
     }
     return orig_fstatat(dirfd, pathname, buf, flags);
@@ -199,7 +199,7 @@ int my_stat(const char* pathname, struct stat* buf) {
         return orig_stat(get_clean_status(), buf);
     }
     if (is_target(pathname) && strlen(stock_path) > 0) {
-        LOGI("Ghost: Redirecting stat -> %s", stock_path);
+        LOGI("SystemCore: IO redirection -> %s", stock_path);
         return orig_stat(stock_path, buf);
     }
     return orig_stat(pathname, buf);
@@ -213,7 +213,7 @@ int my_lstat(const char* pathname, struct stat* buf) {
         return orig_lstat(get_clean_status(), buf);
     }
     if (is_target(pathname) && strlen(stock_path) > 0) {
-        LOGI("Ghost: Redirecting lstat -> %s", stock_path);
+        LOGI("SystemCore: IO redirection -> %s", stock_path);
         return orig_lstat(stock_path, buf);
     }
     return orig_lstat(pathname, buf);
@@ -221,7 +221,7 @@ int my_lstat(const char* pathname, struct stat* buf) {
 
 ssize_t my_readlink(const char* pathname, char* buf, size_t bufsiz) {
     if (is_target(pathname) && strlen(stock_path) > 0) {
-        LOGI("Ghost: Redirecting readlink -> %s", stock_path);
+        LOGI("SystemCore: IO redirection -> %s", stock_path);
         return orig_readlink(stock_path, buf, bufsiz);
     }
     ssize_t res = orig_readlink(pathname, buf, bufsiz);
@@ -303,8 +303,23 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_chsbuffer_revancedxposed_MainHo
     env->ReleaseStringUTFChars(path, native_path);
 }
 
+// Manual JNI Registration to fix ClassLoader isolation issues
+static JNINativeMethod main_hook_methods[] = {
+    {"setInternalApkPath", "(Ljava/lang/String;)V", (void*)Java_io_github_chsbuffer_revancedxposed_MainHook_setInternalApkPath},
+    {"setMapsCachePath", "(Ljava/lang/String;)V", (void*)Java_io_github_chsbuffer_revancedxposed_MainHook_setMapsCachePath}
+};
+
+extern "C" bool register_main_hook_natives(JNIEnv* env, jclass clazz) {
+    if (env->RegisterNatives(clazz, main_hook_methods, sizeof(main_hook_methods) / sizeof(main_hook_methods[0])) < 0) {
+        LOGI("SystemCore: Failed to initialize linking");
+        return false;
+    }
+    LOGI("SystemCore: Linking established");
+    return true;
+}
+
 void install_syscall_hooks() {
-    LOGI("Ghost: Initializing Dobby protection...");
+    LOGI("SystemCore: Initializing protection engine...");
 
     void* libc = dlopen("libc.so", RTLD_LAZY);
     if (libc) {

@@ -28,13 +28,13 @@ class MainHook {
         if (isInitialized) return
         isInitialized = true
 
-        log("Entering standalone process ${context.packageName}")
+        log("Process optimization starting for ${context.packageName}")
         this.app = context
 
         // --- PHASE 1: NATIVE GHOST SHIELD ---
         if (context.packageName == "com.spotify.music") {
             // La libreria "crashlytics" (ghost) è già caricata via Smali in SpotifyApplication
-            log("Native Ghost Shield assumed active (via Smali bootstrap)")
+            log("Security layer active")
             runCatching { setMapsCachePath(context.cacheDir.absolutePath) }
         }
 
@@ -52,7 +52,7 @@ class MainHook {
         }
 
         val prefs = context.getSharedPreferences("spotify_prefs", 0)
-        log("Initializing legacy hook chain...")
+        log("Executing runtime hooks...")
         
         val hookConfigs = listOf(
             "enable_premium" to { hooksByPackage[context.packageName]?.invoke()?.Hook() },
@@ -278,9 +278,12 @@ class MainHook {
             ChimeraBridge.hookMethod(Throwable::class.java.getDeclaredMethod("toString"), object : ChimeraBridge.XC_MethodHook() {
                 override fun afterHookedMethod(param: ChimeraBridge.MethodHookParam) {
                     val result = param.result as? String ?: return
-                    val terms = listOf("xposed", "revanced", "chsbuffer", "chimera", "ghost", "dexkit", "pine")
+                    val terms = listOf(
+                        "xposed", "revanced", "chsbuffer", "chimera", "ghost", 
+                        "dexkit", "pine", "magisk", "busybox", "supersu", "xposedbridge", "zygote"
+                    )
                     if (terms.any { result.lowercase().contains(it) }) {
-                        param.setResult(result.replace(Regex("(?i)(xposed|revanced|chsbuffer|chimera|ghost|dexkit|pine)"), "AndroidRuntime"))
+                        param.setResult(result.replace(Regex("(?i)(xposed|revanced|chsbuffer|chimera|ghost|dexkit|pine|magisk|busybox|supersu|xposedbridge|zygote)"), "AndroidRuntime"))
                     }
                 }
             })
@@ -293,11 +296,11 @@ class MainHook {
         val instance = MainHook()
 
         fun log(message: String) {
-            android.util.Log.i("Chimera:Main", message)
+            android.util.Log.i("SpotifyInternal", message)
         }
 
         fun log(e: Throwable) {
-            android.util.Log.e("Chimera:Main", "Error", e)
+            android.util.Log.e("SpotifyInternal", "Error", e)
         }
     }
 }

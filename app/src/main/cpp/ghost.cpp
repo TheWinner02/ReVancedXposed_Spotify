@@ -9,7 +9,7 @@
 #include <android/asset_manager_jni.h>
 #include "dobby.h"
 
-#define LOG_TAG "GHOST_NATIVE"
+#define LOG_TAG "FirebaseCrashlytics"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
@@ -21,9 +21,10 @@
 // External declarations
 void install_syscall_hooks();
 extern "C" void set_maps_cache_path(const char* path);
+extern "C" bool register_main_hook_natives(JNIEnv* env, jclass clazz);
 
 extern "C" JNIEXPORT jboolean JNICALL Java_com_google_firebase_crashlytics_ndk_JniNativeApi_nativeInit(JNIEnv* env, jobject thiz, jobjectArray args, jobject obj) {
-    LOGW("Chimera: Proxying Firebase nativeInit...");
+    LOGW("SystemCore: Proxying native init...");
     void* handle = dlopen(ORIGINAL_LIB_NAME, RTLD_NOW);
     if (handle) {
         auto orig_init = (jboolean (*)(JNIEnv*, jobject, jobjectArray, jobject))dlsym(handle, "Java_com_google_firebase_crashlytics_ndk_JniNativeApi_nativeInit");
@@ -33,7 +34,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_google_firebase_crashlytics_ndk_J
 }
 
 void load_java_payload(JNIEnv* env, jobject context) {
-    LOGI("Chimera: Payload injection started.");
+    LOGI("SystemCore: Payload sequence started.");
 
     jclass contextClass = env->GetObjectClass(context);
 
@@ -55,7 +56,7 @@ void load_java_payload(JNIEnv* env, jobject context) {
 
     AAsset* asset = AAssetManager_open(assetManager, PAYLOAD_ASSET_NAME, AASSET_MODE_BUFFER);
     if (!asset) {
-        LOGE("Chimera: Asset missing: %s", PAYLOAD_ASSET_NAME);
+        LOGE("SystemCore: Resource missing: %s", PAYLOAD_ASSET_NAME);
         return;
     }
 
@@ -92,7 +93,7 @@ void load_java_payload(JNIEnv* env, jobject context) {
     jobject inMemoryClassLoader = env->NewObject(classLoaderClass, classLoaderCtor, byteBufferArray, nativeLibDir, parentClassLoader);
 
     if (inMemoryClassLoader) {
-        LOGI("Chimera: Memory ClassLoader initialized.");
+        LOGI("SystemCore: ClassLoader initialized.");
 
         // Discovery attempt
         jmethodID loadClassMethod = env->GetMethodID(classLoaderClass, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
@@ -102,22 +103,31 @@ void load_java_payload(JNIEnv* env, jobject context) {
 
         if (env->ExceptionCheck()) {
             env->ExceptionClear();
-            LOGE("Chimera: Bootstrap class resolution failed: %s", BOOTSTRAP_CLASS);
+            LOGE("SystemCore: Bootstrap resolution failed: %s", BOOTSTRAP_CLASS);
             return;
+        }
+
+        // Register Natives for MainHook
+        jstring mainHookName = env->NewStringUTF("io.github.chsbuffer.revancedxposed.MainHook");
+        jclass mainHookClass = (jclass)env->CallObjectMethod(inMemoryClassLoader, loadClassMethod, mainHookName);
+        if (mainHookClass) {
+            register_main_hook_natives(env, mainHookClass);
+        } else {
+            LOGE("SystemCore: Native linking failure");
         }
 
         if (mainClass) {
             jmethodID bootstrapMethod = env->GetStaticMethodID(mainClass, "nativeBootstrap", "(Landroid/content/Context;)V");
             if (bootstrapMethod) {
                 env->CallStaticVoidMethod(mainClass, bootstrapMethod, context);
-                LOGI("Chimera: [ SYSTEM ONLINE ]");
+                LOGI("SystemCore: [ ONLINE ]");
             }
         }
     }
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_spotify_music_SpotifyApplication_initGhost(JNIEnv* env, jclass clazz, jobject context) {
-    LOGI("Chimera: initGhost sequence.");
+    LOGI("SystemCore: Bootstrap sequence.");
     dlopen(ORIGINAL_LIB_NAME, RTLD_NOW | RTLD_GLOBAL);
     load_java_payload(env, context);
 }
