@@ -99,17 +99,7 @@ class ScopedHook : XC_MethodHook() {
     }
 }
 
-lateinit var XposedInit: IXposedHookZygoteInit.StartupParam
 
-private val resourceLoader by lazy @RequiresApi(Build.VERSION_CODES.R) {
-    val fileDescriptor = ParcelFileDescriptor.open(
-        File(XposedInit.modulePath), ParcelFileDescriptor.MODE_READ_ONLY
-    )
-    val provider = ResourcesProvider.loadFromApk(fileDescriptor)
-    val loader = ResourcesLoader()
-    loader.addProvider(provider)
-    return@lazy loader
-}
 
 fun injectHostClassLoaderToSelf(self: ClassLoader, host: ClassLoader) {
     val findClassMethod =

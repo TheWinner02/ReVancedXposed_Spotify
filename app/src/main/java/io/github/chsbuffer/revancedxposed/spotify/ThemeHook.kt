@@ -65,8 +65,9 @@ class ThemeHook(app: Application, private val lpparam: XC_LoadPackage.LoadPackag
             Int::class.javaPrimitiveType,
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
+                    if (param.hasThrowable()) return
                     val states = param.args[0] as IntArray
-                    val originalColor = param.result as Int
+                    val originalColor = (param.result as? Int) ?: return
 
                     val isPressed = states.contains(android.R.attr.state_pressed)
                     val isSelected = states.contains(android.R.attr.state_selected)
@@ -102,7 +103,9 @@ class ThemeHook(app: Application, private val lpparam: XC_LoadPackage.LoadPackag
             String::class.java,
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    param.result = replaceColorLogic(param.result as Int)
+                    if (param.hasThrowable()) return
+                    val result = (param.result as? Int) ?: return
+                    param.result = replaceColorLogic(result)
                 }
             }
         )
@@ -140,10 +143,11 @@ class ThemeHook(app: Application, private val lpparam: XC_LoadPackage.LoadPackag
             lpparam.classLoader,
             "getColor",
             Int::class.javaPrimitiveType,
-            "android.content.res.Resources.Theme",
+            "android.content.res.Resources\$Theme",
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    val color = param.result as Int
+                    if (param.hasThrowable()) return
+                    val color = (param.result as? Int) ?: return
                     param.result = replaceColorLogic(color)
                 }
             }
@@ -178,7 +182,8 @@ class ThemeHook(app: Application, private val lpparam: XC_LoadPackage.LoadPackag
             Int::class.javaPrimitiveType,
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    val color = param.result as Int
+                    if (param.hasThrowable()) return
+                    val color = (param.result as? Int) ?: return
                     param.result = replaceColorLogic(color)
                 }
             }

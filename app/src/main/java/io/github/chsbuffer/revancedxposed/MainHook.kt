@@ -8,8 +8,6 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import app.revanced.extension.shared.Utils
 import de.robv.android.xposed.IXposedHookLoadPackage
-import de.robv.android.xposed.IXposedHookZygoteInit
-import de.robv.android.xposed.IXposedHookZygoteInit.StartupParam
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
@@ -21,8 +19,7 @@ import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import androidx.core.view.isNotEmpty
 
-class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
-    lateinit var startupParam: StartupParam
+class MainHook : IXposedHookLoadPackage {
     lateinit var lpparam: LoadPackageParam
     lateinit var app: Application
     var targetPackageName: String? = null
@@ -181,11 +178,6 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
         }.isSuccess || runCatching {
             lpparam.classLoader.loadClass("app.revanced.integrations.shared.utils.Utils")
         }.isSuccess
-    }
-
-    override fun initZygote(startupParam: StartupParam) {
-        this.startupParam = startupParam
-        XposedInit = startupParam
     }
 }
 

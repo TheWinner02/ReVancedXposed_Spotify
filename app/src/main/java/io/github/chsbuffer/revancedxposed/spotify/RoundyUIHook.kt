@@ -93,33 +93,35 @@ class RoundyUIHook(private val lpparam: XC_LoadPackage.LoadPackageParam) {
         )
 
         // 4. Hook per i BottomSheets (Il contenitore che scivola dal basso)
-        XposedHelpers.findAndHookMethod(
-            "com.google.android.material.bottomsheet.BottomSheetBehavior",
-            classLoader,
-            "onLayoutChild",
-            "androidx.coordinatorlayout.widget.CoordinatorLayout",
-            View::class.java,
-            Int::class.javaPrimitiveType,
-            object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val view = param.args[1] as View
+        runCatching {
+            XposedHelpers.findAndHookMethod(
+                "com.google.android.material.bottomsheet.BottomSheetBehavior",
+                classLoader,
+                "onLayoutChild",
+                "androidx.coordinatorlayout.widget.CoordinatorLayout",
+                View::class.java,
+                Int::class.javaPrimitiveType,
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val view = param.args[1] as View
 
-                    // Applichiamo lo stondamento solo agli angoli SUPERIORI (Top Left e Top Right)
-                    // Tipico dei BottomSheet Material 3
-                    view.clipToOutline = true
-                    view.outlineProvider = object : ViewOutlineProvider() {
-                        override fun getOutline(view: View, outline: Outline) {
-                            // Creiamo un rettangolo che esce dal basso per non stondare gli angoli inferiori
-                            outline.setRoundRect(
-                                0, 0,
-                                view.width, view.height + radiusLarge.toInt(),
-                                radiusLarge
-                            )
+                        // Applichiamo lo stondamento solo agli angoli SUPERIORI (Top Left e Top Right)
+                        // Tipico dei BottomSheet Material 3
+                        view.clipToOutline = true
+                        view.outlineProvider = object : ViewOutlineProvider() {
+                            override fun getOutline(view: View, outline: Outline) {
+                                // Creiamo un rettangolo che esce dal basso per non stondare gli angoli inferiori
+                                outline.setRoundRect(
+                                    0, 0,
+                                    view.width, view.height + radiusLarge.toInt(),
+                                    radiusLarge
+                                )
+                            }
                         }
                     }
                 }
-            }
-        )
+            )
+        }.onFailure { Log.e(TAG, "Hook BottomSheetBehavior fallito: ${it.message}") }
 
 // 5. Hook di rinforzo per i Background dei BottomSheet
 // Molte app usano un MaterialShapeDrawable per gestire gli angoli dei pannelli
