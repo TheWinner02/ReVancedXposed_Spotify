@@ -1,5 +1,5 @@
 [versions]
-agp = "9.2.0"
+agp = "9.2.1"
 flatbuffersJava = "25.2.10"
 kotlin = "2.3.21"
 dexkit = "2.2.0"
@@ -8,12 +8,12 @@ pine = "0.3.0"
 pine-xposed = "0.2.0"
 annotation = "1.10.0"
 gson = "2.14.0"
-kotlinxCoroutinesAndroid = "1.10.2"
+kotlinxCoroutinesAndroid = "1.11.0"
 fuel = "3.0.0-alpha04"
-junit = "6.0.3"
+junit = "6.1.0"
 jadx = "1.5.5"
-slf4j = "2.0.17"
-material = "1.13.0"
+slf4j = "2.0.18"
+material = "1.14.0"
 
 [libraries]
 dexkit = { group = "org.luckypray", name = "dexkit", version.ref = "dexkit" }

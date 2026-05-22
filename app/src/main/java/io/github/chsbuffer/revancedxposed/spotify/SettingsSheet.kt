@@ -54,7 +54,7 @@ object SettingsSheet {
 
         // --- TITOLO ---
         root.addView(TextView(activity).apply {
-            text = "Revanced Xposed FE Settings"
+            text = "Cancer Settings"
             textSize = 20f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
@@ -66,6 +66,7 @@ object SettingsSheet {
         root.addView(createRow(activity, "Enable AdBlock", "Block ads and other unwanted content", "enable_adblock", prefs))
         root.addView(createRow(activity, "Enable Momnet Theme", "Dynamic colors based on the wallpaper", "enable_monet", prefs))
         root.addView(createRow(activity, "Enable RoundyUI", "Rounded corners on cards and images", "enable_round_ui", prefs))
+        root.addView(createRow(activity, "Disable Screenshot Restriction", "Allows screenshots and screen recordings", "enable_screenshot", prefs))
 
         // --- SPAZIO ---
         root.addView(View(activity).apply { layoutParams = LinearLayout.LayoutParams(-1, (20 * density).toInt()) })

@@ -18,6 +18,7 @@ import io.github.chsbuffer.revancedxposed.spotify.SettingsSheet
 import io.github.chsbuffer.revancedxposed.spotify.SpotifyHook
 import io.github.chsbuffer.revancedxposed.spotify.ThemeHook
 import androidx.core.view.isNotEmpty
+import io.github.chsbuffer.revancedxposed.spotify.ScreenshotHook
 
 class MainHook : IXposedHookLoadPackage {
     lateinit var lpparam: LoadPackageParam
@@ -102,7 +103,7 @@ class MainHook : IXposedHookLoadPackage {
             try {
                 // Puoi aggiungere "enable_adblock" nel tuo SettingsSheet più tardi
                 if (prefs.getBoolean("enable_adblock", true)) {
-                    AdBlockHook(lpparam).hook()
+                    AdBlockHook(app, lpparam).hook()
                     XposedBridge.log("AdBlocker: Modulo attivato")
                 }
             } catch (e: Exception) {
@@ -126,7 +127,16 @@ class MainHook : IXposedHookLoadPackage {
             } catch (e: Exception) {
                 XposedBridge.log("Mod Roundy fallita: ${e.message}")
             }
-            
+
+            // --- BLOCCO SCREENSHOT ---
+            try {
+                if (prefs.getBoolean("enable_screenshot", true)) {
+                    ScreenshotHook(app, lpparam).hook()
+                }
+            } catch (e: Exception) {
+                XposedBridge.log("Mod Screenshot fallita: ${e.message}")
+            }
+
         }
     }
 

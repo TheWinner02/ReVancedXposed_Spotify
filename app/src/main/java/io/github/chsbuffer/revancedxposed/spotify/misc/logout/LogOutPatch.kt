@@ -25,9 +25,9 @@ fun SpotifyHook.LogOutPatch() {
 
     // --- LAYER 1 & 2: Network Interceptor (OkHttp3) ---
     try {
-        val chainClass = runCatching { Class.forName($$"okhttp3.Interceptor$Chain", false, cl) }.getOrNull() ?: return
+        val chainClass = runCatching { Class.forName("okhttp3.Interceptor\$Chain", false, cl) }.getOrNull() ?: return
         val reqClass = Class.forName("okhttp3.Request", false, cl)
-        val builderClass = Class.forName($$"okhttp3.Response$Builder", false, cl)
+        val builderClass = Class.forName("okhttp3.Response\$Builder", false, cl)
         val bodyClass = Class.forName("okhttp3.ResponseBody", false, cl)
         val mtClass = Class.forName("okhttp3.MediaType", false, cl)
 
@@ -38,7 +38,7 @@ fun SpotifyHook.LogOutPatch() {
         XposedBridge.hookMethod(proceedMethod, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 try {
-                    val req = param.args[0] ?: return
+                    val req = param.args?.get(0) ?: return
                     val url = findMethodSafe(req.javaClass, "url")?.invoke(req) ?: return
                     val host = findMethodSafe(url.javaClass, "host")?.invoke(url) as? String ?: ""
                     val path = findMethodSafe(url.javaClass, "encodedPath")?.invoke(url) as? String ?: ""
@@ -63,14 +63,14 @@ fun SpotifyHook.LogOutPatch() {
                         val emptyBody = findMethodSafe(bodyClass, "create", mtClass, String::class.java)?.invoke(null, null, "")
                         findMethodSafe(builderClass, "body", bodyClass)?.invoke(builder, emptyBody)
 
-                        param.result = findMethodSafe(builderClass, "build")?.invoke(builder)
+                        param.setResult(findMethodSafe(builderClass, "build")?.invoke(builder))
                     }
                 } catch (_: Exception) { /* Silent fail */ }
             }
 
             override fun afterHookedMethod(param: MethodHookParam) {
                 try {
-                    val resp = param.result ?: return
+                    val resp = param.getResult() ?: return
                     val code = findMethodSafe(resp.javaClass, "code")?.invoke(resp) as? Int ?: return
                     val req = findMethodSafe(resp.javaClass, "request")?.invoke(resp) ?: return
                     val url = findMethodSafe(req.javaClass, "url")?.invoke(req) ?: return
@@ -93,7 +93,7 @@ fun SpotifyHook.LogOutPatch() {
                             AuthCache.contentType = findMethodSafe(peeked.javaClass, "contentType")?.invoke(peeked)
                             Log.d(TAG, "★ L1: Auth Token CACHED")
                         }
-                    } else if ((code == 401 || code == 403) && AuthCache.body != null && isAuthEndpoint) {
+                    } else if ((code == 401 || code == 403) && io.github.chsbuffer.revancedxposed.spotify.misc.logout.AuthCache.body != null && isAuthEndpoint) {
                         Log.w(TAG, "★ L1: Auth REJECTED ($code) -> REPLAYING cached success response")
 
                         val builder = findMethodSafe(resp.javaClass, "newBuilder")?.invoke(resp) ?: return
@@ -104,7 +104,7 @@ fun SpotifyHook.LogOutPatch() {
                             ?.invoke(null, AuthCache.contentType, AuthCache.body)
                         findMethodSafe(builder.javaClass, "body", bodyClass)?.invoke(builder, replayBody)
 
-                        param.result = findMethodSafe(builder.javaClass, "build")?.invoke(builder)
+                        param.setResult(findMethodSafe(builder.javaClass, "build")?.invoke(builder))
                     }
                 } catch (_: Exception) { /* Silent fail */ }
             }
@@ -121,10 +121,10 @@ fun SpotifyHook.LogOutPatch() {
         // Hook remove()
         XposedHelpers.findAndHookMethod(editorClass, "remove", String::class.java, object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                val key = param.args[0] as? String ?: return
+                val key = param.args?.get(0) as? String ?: return
                 if (protectedKeys.any { key.lowercase().contains(it) }) {
                     Log.i(TAG, "★ L3: Blocked removal of auth key: $key")
-                    param.result = param.thisObject
+                    param.setResult(param.thisObject)
                 }
             }
         })
@@ -133,7 +133,7 @@ fun SpotifyHook.LogOutPatch() {
         XposedHelpers.findAndHookMethod(editorClass, "clear", object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 Log.w(TAG, "★ L3: Blocked SharedPreferences.clear() to preserve session")
-                param.result = param.thisObject
+                param.setResult(param.thisObject)
             }
         })
     } catch (e: Throwable) {
